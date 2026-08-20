@@ -1,0 +1,46 @@
+# cargo-deny configuration.
+#
+# The point of this file is that a dependency change has to be a deliberate,
+# reviewable act. A pull request that quietly adds a crate from an unexpected
+# registry, or one with an open advisory, fails CI rather than relying on
+# someone noticing it in the diff.
+
+[advisories]
+# Fail on any crate with a known security advisory.
+yanked = "deny"
+ignore = []
+
+[bans]
+# Multiple versions of the same crate is a smell worth seeing, not a failure.
+multiple-versions = "warn"
+# Wildcard version requirements let a dependency change underneath us.
+wildcards = "deny"
+
+[sources]
+# Anything not from crates.io has to be added here explicitly. This is the rule
+# that stops a PR pointing a dependency at an arbitrary git repository.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[licenses]
+# Permissive licences only. A copyleft dependency would change the terms under
+# which this crate can be used, which is a decision, not a dependency bump.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # webpki-root-certs, the Mozilla CA root store bundled by rustls. CDLA is
+    # the standard licence for that certificate data rather than for code.
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+# The allow list is deliberately broader than what is currently in the tree, so
+# a routine dependency bump does not fail on a licence that was always going to
+# be acceptable. Unused entries are not a finding.
+unused-allowed-license = "allow"

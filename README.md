@@ -1,5 +1,10 @@
 # stratify
 
+[![crates.io](https://img.shields.io/crates/v/stratify.svg)](https://crates.io/crates/stratify)
+[![docs.rs](https://docs.rs/stratify/badge.svg)](https://docs.rs/stratify)
+[![CI](https://github.com/LogicOcean/stratify/actions/workflows/ci.yml/badge.svg)](https://github.com/LogicOcean/stratify/actions/workflows/ci.yml)
+[![MIT licensed](https://img.shields.io/crates/l/stratify.svg)](./LICENSE)
+
 Layered configuration for Rust — pluggable sources, priority merging, typed access.
 
 Stack configuration from files, environment variables and Azure App Configuration,
@@ -108,6 +113,23 @@ loading and refreshing are async.
 declare `#[async_trait]` and `build`/`refresh` are awaited. The change exists so that
 network-backed sources do not have to block a runtime thread.
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Pull requests are welcome; the review
+focus and the local commands CI mirrors are both documented there.
+
+Security issues go through [private vulnerability reporting](./SECURITY.md)
+rather than a public issue.
+
+## Supply chain
+
+Actions are pinned to commit SHAs, `cargo-deny` gates advisories, licences,
+wildcard versions and dependency sources, git and unknown-registry dependencies
+are denied, and the crate is `#![forbid(unsafe_code)]`. See [SECURITY.md](./SECURITY.md).
+
+A consumer takes 33 crates by default, or 145 with `azure` enabled — which is
+why the Azure source is behind a feature flag rather than always on.
+
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

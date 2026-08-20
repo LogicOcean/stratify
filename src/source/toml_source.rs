@@ -50,7 +50,7 @@ impl Source for TomlSource {
     }
 }
 
-/// Convert a toml::Value to serde_json::Value recursively.
+/// Convert a `toml::Value` into a `serde_json::Value`, recursively.
 fn toml_to_json(val: toml::Value) -> Value {
     match val {
         toml::Value::String(s) => Value::String(s),

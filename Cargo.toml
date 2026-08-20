@@ -1,0 +1,39 @@
+[package]
+name = "stratify"
+version = "0.3.0"
+edition = "2021"
+description = "Layered configuration for Rust: pluggable sources, priority merging, typed access"
+license = "MIT"
+repository = "https://github.com/LogicOcean/stratify"
+documentation = "https://docs.rs/stratify"
+readme = "README.md"
+keywords = ["config", "configuration", "settings", "layered", "azure"]
+categories = ["config"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_norway = "0.9"
+toml = "1"
+dotenvy = "0.15"
+thiserror = "2"
+tracing = "0.1"
+async-trait = "0.1"
+
+# Optional, enabled by the `azure` feature.
+azure_core = { version = "1", optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+azure_identity = "1"
+
+[features]
+default = []
+# Azure App Configuration source. The caller supplies the credential, so
+# azure_identity is their dependency rather than ours.
+azure = ["dep:azure_core", "dep:reqwest"]
+
+[package.metadata.docs.rs]
+all-features = true

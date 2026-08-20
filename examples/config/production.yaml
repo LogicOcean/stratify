@@ -1,0 +1,5 @@
+# Only the keys that differ from base.json. Merging is deep, so database.port
+# and database.tls below survive alongside database.host from the base file.
+database:
+  host: db.prod.internal
+  tls: "true"

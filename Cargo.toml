@@ -35,5 +35,11 @@ default = []
 # azure_identity is their dependency rather than ours.
 azure = ["dep:azure_core", "dep:reqwest"]
 
+# The Azure example needs the feature and the credential crate, so it must not
+# be built by a default `cargo build --examples`.
+[[example]]
+name = "azure"
+required-features = ["azure"]
+
 [package.metadata.docs.rs]
 all-features = true

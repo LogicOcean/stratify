@@ -1,0 +1,11 @@
+{
+  "app": {
+    "name": "example-service",
+    "workers": "4"
+  },
+  "database": {
+    "host": "localhost",
+    "port": "5432",
+    "tls": "false"
+  }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "stratify"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Layered configuration for Rust: pluggable sources, priority merging, typed access"
 license = "MIT"

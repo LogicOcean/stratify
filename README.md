@@ -43,6 +43,7 @@ source replacing the whole subtree.
 | YAML | `.yaml(path, priority)` | |
 | TOML | `.toml(path, priority)` | |
 | Env | `.env(prefix, separator, priority)` | `APP_DB__HOST` → `{"db": {"host": …}}` |
+| Env (named) | `.env_keys(["RUST_LOG", …], separator, priority)` | for variables with no shared prefix |
 | DotEnv | `.dotenv(path, prefix, separator, priority)` | loads the file, then reads matching vars |
 | Azure App Configuration | `.azure(endpoint, credential, priority)` | requires the `azure` feature |
 

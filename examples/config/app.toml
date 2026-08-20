@@ -1,0 +1,5 @@
+[app]
+name = "example-service-toml"
+
+[database]
+host = "db.toml.internal"

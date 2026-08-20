@@ -37,6 +37,20 @@ jobs:
       - name: Test (all features)
         run: cargo test --all-features
 
+      # Examples are documentation that compiles. Building them under clippy
+      # with warnings denied is what stops them drifting from the API.
+      - name: Examples
+        run: cargo clippy --examples --all-features -- -D warnings
+
+      # The three that need no external service are run for real, so an example
+      # that compiles but no longer does what its comments claim still fails.
+      - name: Run examples
+        run: |
+          cargo run --quiet --example basic
+          cargo run --quiet --example precedence
+          cargo run --quiet --example typed
+          cargo run --quiet --example custom_source
+
       - name: Docs
         run: cargo doc --no-deps --all-features
         env:

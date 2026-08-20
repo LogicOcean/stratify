@@ -113,6 +113,20 @@ loading and refreshing are async.
 declare `#[async_trait]` and `build`/`refresh` are awaited. The change exists so that
 network-backed sources do not have to block a runtime thread.
 
+## Examples and design notes
+
+Runnable examples live in [`examples/`](./examples/) and are compiled and run by
+CI, so they cannot drift from the API:
+
+```bash
+cargo run --example basic
+cargo run --example precedence
+```
+
+[`docs/design.md`](./docs/design.md) covers why the priority ordering is
+inverted, why merging is deep, why `Source::load` is async, and why the Azure
+credential is supplied by the caller.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). Pull requests are welcome; the review

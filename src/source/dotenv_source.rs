@@ -20,6 +20,15 @@ pub struct DotEnvSource {
 }
 
 impl DotEnvSource {
+    /// Load a `.env` file, then capture matching environment variables.
+    ///
+    /// The file is read immediately so that a missing or unreadable path is an
+    /// error here rather than a silently empty source at load time.
+    ///
+    /// `priority` follows the crate convention: lower numbers win.
+    ///
+    /// # Errors
+    /// Returns [`ConfigError::Other`] if the file cannot be read.
     pub fn new(
         path: impl AsRef<Path>,
         prefix: &str,

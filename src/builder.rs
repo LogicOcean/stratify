@@ -151,6 +151,11 @@ impl ConfigBuilder {
         self.source(source)
     }
 
+    /// Consume the builder and return its sources, ordered by precedence.
+    ///
+    /// Sorted so that the lowest priority number comes first. Most callers want
+    /// [`ConfigBuilder::build`] instead; this is exposed for anyone assembling a
+    /// [`ConfigStore`](crate::ConfigStore) by hand.
     pub fn build_sources(mut self) -> Vec<Arc<dyn Source>> {
         self.sources.sort_by_key(|s| s.priority());
         self.sources

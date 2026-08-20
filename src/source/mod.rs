@@ -12,7 +12,7 @@ use serde_json::Value;
 /// A source of configuration data, identified by a priority level.
 ///
 /// Lower priority numbers = higher precedence (loaded later, overrides earlier sources).
-/// Implementations must be `Send + Sync` for thread-safe use in ConfigStore.
+/// Implementations must be `Send + Sync` for thread-safe use in [`ConfigStore`](crate::ConfigStore).
 ///
 /// `load` is asynchronous so that sources can perform I/O over the network, such
 /// as the Azure App Configuration source, without blocking a runtime thread.

@@ -24,6 +24,12 @@ pub struct EnvSource {
 }
 
 impl EnvSource {
+    /// Create a source over environment variables matching `prefix`.
+    ///
+    /// `separator` controls nesting: with `__`, `APP_DB__HOST` becomes
+    /// `{"db": {"host": ...}}`.
+    ///
+    /// `priority` follows the crate convention: lower numbers win.
     pub fn new(prefix: impl Into<String>, separator: impl Into<String>, priority: u32) -> Self {
         Self {
             prefix: prefix.into(),

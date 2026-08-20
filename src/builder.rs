@@ -151,6 +151,21 @@ impl ConfigBuilder {
         self.source(source)
     }
 
+    /// Add a source over exactly the named environment variables.
+    ///
+    /// For settings named by convention rather than by application, such as
+    /// `RUST_LOG` or `AZURE_STORAGE_ACCOUNT`, where no prefix selects them and
+    /// nothing else. See [`EnvSource::with_keys`](crate::source::EnvSource::with_keys).
+    ///
+    /// `priority` follows the crate convention: lower numbers win.
+    pub fn env_keys<I, S>(self, keys: I, separator: impl Into<String>, priority: u32) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.source(EnvSource::with_keys(keys, separator, priority))
+    }
+
     /// Consume the builder and return its sources, ordered by precedence.
     ///
     /// Sorted so that the lowest priority number comes first. Most callers want

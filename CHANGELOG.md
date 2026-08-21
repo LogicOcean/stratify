@@ -4,7 +4,82 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the version is below 1.0, a minor bump may contain breaking changes.
+## [1.0.0] — 2026-08-21
+
+The stability release. From here, a breaking change to anything public is a
+major version, so the 0.4-era caveat about minor bumps is retired along with
+the number.
+
+stratify absorbs the unpublished `loggingkit` crate. One crate, two namespaces:
+`stratify::config` is the configuration half, `stratify::logging` is a
+non-blocking `tracing` facade, and `stratify::init` stands both up in one call.
+The logging half is behind the `logging` feature and a config-only build
+compiles none of it — CI proves that on every push by failing if the default
+dependency tree contains `tracing-subscriber`, `tracing-appender` or any
+`opentelemetry` crate.
+
+### Changed
+
+- **Breaking:** the config API moved from the crate root into
+  `stratify::config`, and the types shed their prefixes now that the module
+  carries the name: `ConfigBuilder` → `config::Builder`, `ConfigError` →
+  `config::Error`, `ConfigStore` → `config::Store`. `Source` and the source
+  types live under `config::source`.
+- The minimum supported Rust version is now declared: 1.88.0.
+
+### Added
+
+- `stratify::logging` (feature `logging`): console, JSON, file and syslog
+  sinks, all non-blocking; per-sink filters; runtime filter reload; sampling
+  and rate-limit gates; size- and time-based file rotation with retention;
+  custom line formatters; redaction; panic capture; queue-depth and
+  dropped-line accounting. Formerly the `loggingkit` facade, imported here
+  without its history and with its legacy pre-facade API (`LogBuilder`,
+  `LogStore`, the `sink` module) left behind.
+- `logging::settings::Settings` (and per-sink `*Settings` blocks), a serde
+  schema read from a config [`Store`] with `Settings::from_store`. The logging
+  half does no parsing of its own — TOML, YAML, JSON and environment layering
+  are the config half's job, in one place. The old `from_file`, and the `toml`
+  dependency it carried, are gone.
+- `stratify::init` and `init_with` (feature `logging`): read configuration
+  (file < environment < `.env`), build logging from its `[logging]` block,
+  install the subscriber, and return the `Bootstrap` pair. The first record
+  the subscriber carries names the sources that resolved, so a wrong
+  precedence stack is visible instead of silent.
+- Features `appinsights` (Azure Application Insights export with trace
+  correlation) and `compression` (gzip retired log files), both implying
+  `logging`.
+- Full settings parity: `[logging.filters]` (per-sink directives), `redact`,
+  `capture_panics`, `[logging.global_fields]`, `[logging.syslog]` and
+  `[logging.app_insights]` are all expressible in configuration, so "described
+  rather than coded" covers the whole builder surface. The `app_insights`
+  block names the *key* the connection string is found under rather than
+  holding the value, so the file stays safe to commit; an explicit block whose
+  secret is missing is a startup error, not a silently absent exporter. A bad
+  `level`, an unknown syslog facility, or a block needing a feature that is
+  not compiled in all fail loudly at startup naming the offending key —
+  `Settings::to_builder` is fallible now for exactly that reason.
+- `AppInsightsConfig::with_sample_rate`, bounding the fraction of traces
+  exported (`0.0..=1.0`, parent-based so a trace is kept or dropped whole).
+  Exporting every span is an Application Insights bill that grows linearly
+  with traffic; this is the knob. Log records are not sampled — per-sink
+  filters are the tool for those. Also settable as `sample_rate` in the
+  `[logging.app_insights]` block.
+- `init` reads `rust_log` from the *store* when no explicit level is set, so a
+  `RUST_LOG` written in `.env` obeys the store's precedence instead of
+  silently losing to a shell export — the builder's own fallback reads the
+  process environment, which a `.env` loaded as a source never touches.
+  Sourced from configuration it is validated strictly: a typo is a startup
+  error naming the key.
+- `AzureAppConfigSource::with_key_vault_resolution`, resolving Key Vault
+  references into the secrets they point at, reusing the source's credential
+  against the vault data plane. Off by default because resolution widens the
+  source's reach from one store to every vault the references name; with it
+  off, *encountering* a reference is an error naming the key — loud, rather
+  than a JSON envelope masquerading as a configuration value.
+- `stratify::logging::EnvFilter`, re-exported so `with_filter` and
+  `reload_filter` can be called without taking `tracing-subscriber` as a
+  direct dependency.
 
 ## [0.3.1] — 2026-08-20
 

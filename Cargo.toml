@@ -1,14 +1,15 @@
 [package]
 name = "stratify"
-version = "0.3.1"
+version = "1.0.0"
 edition = "2021"
-description = "Layered configuration for Rust: pluggable sources, priority merging, typed access"
+rust-version = "1.88.0"
+description = "Layered configuration and structured logging for Rust services: pluggable sources, priority merging, typed access, and a tracing facade"
 license = "MIT"
 repository = "https://github.com/LogicOcean/stratify"
 documentation = "https://docs.rs/stratify"
 readme = "README.md"
-keywords = ["config", "configuration", "settings", "layered", "azure"]
-categories = ["config"]
+keywords = ["config", "configuration", "logging", "layered", "tracing"]
+categories = ["config", "development-tools::debugging"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -24,16 +25,58 @@ async-trait = "0.1"
 azure_core = { version = "1", optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
 
+# Optional, enabled by the `logging` feature.
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "time"], optional = true }
+tracing-appender = { version = "0.2", optional = true }
+time = { version = "0.3", features = ["formatting", "local-offset", "macros"], optional = true }
+
+# Optional, enabled by the `compression` feature.
+flate2 = { version = "1", optional = true }
+
+# Optional, enabled by the `appinsights` feature. There is no official Azure
+# Monitor SDK for Rust, so export goes through OpenTelemetry.
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", optional = true }
+opentelemetry-application-insights = { version = "0.45", default-features = false, features = ["logs", "trace"], optional = true }
+opentelemetry-appender-tracing = { version = "0.32", optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true }
+opentelemetry-http = { version = "0.32", features = ["reqwest-blocking"], optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 azure_identity = "1"
+# Sets file mtimes in the log-retention tests.
+filetime = "0.2"
 
 [features]
 default = []
+
 # Azure App Configuration source. The caller supplies the credential, so
 # azure_identity is their dependency rather than ours.
 azure = ["dep:azure_core", "dep:reqwest"]
+
+# The logging half: `stratify::logging`, a non-blocking tracing facade with
+# console, JSON, file and syslog sinks. Configuration stays the base crate —
+# this feature only ever adds.
+logging = ["dep:tracing-subscriber", "dep:tracing-appender", "dep:time"]
+
+# Gzip retired log files. Accepted and ignored by the API without the feature,
+# so enabling it later needs no code change.
+compression = ["logging", "dep:flate2"]
+
+# Export to Azure Application Insights, with trace correlation.
+appinsights = [
+    "logging",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-application-insights",
+    "dep:opentelemetry-appender-tracing",
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry-http",
+    "reqwest/blocking",
+    "dep:reqwest",
+]
 
 # The Azure example needs the feature and the credential crate, so it must not
 # be built by a default `cargo build --examples`.
@@ -41,5 +84,35 @@ azure = ["dep:azure_core", "dep:reqwest"]
 name = "azure"
 required-features = ["azure"]
 
+# The logging examples exercise the logging half.
+[[example]]
+name = "logging_basic"
+required-features = ["logging"]
+
+[[example]]
+name = "file_rotation"
+required-features = ["logging"]
+
+[[example]]
+name = "filter_reload"
+required-features = ["logging"]
+
 [package.metadata.docs.rs]
 all-features = true
+
+# Debug info across the appinsights dependency tree overflows a 32-bit
+# relocation and the link fails outright:
+#   relocation R_X86_64_32 out of range ... consider recompiling with
+#   -fdebug-types-section
+# `split-debuginfo = "unpacked"` leaves DWARF in separate object files instead
+# of copying it into the linked binary, which is what keeps the link inside the
+# limit; line tables are all a backtrace needs and shrink it further. Both
+# profiles are set because cargo builds the test binaries under `test` and the
+# dependencies they link under `dev`, so either one alone still fails.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.test]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"

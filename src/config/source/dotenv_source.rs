@@ -1,5 +1,5 @@
-use crate::error::ConfigError;
-use crate::source::{EnvSource, Source};
+use crate::config::error::Error;
+use crate::config::source::{EnvSource, Source};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::path::Path;
@@ -11,9 +11,9 @@ use std::path::Path;
 ///
 /// # Example
 /// ```rust,no_run
-/// use stratify::source::DotEnvSource;
+/// use stratify::config::source::DotEnvSource;
 /// let source = DotEnvSource::new(".env", "APP_", "__", 10)?;
-/// # Ok::<(), stratify::ConfigError>(())
+/// # Ok::<(), stratify::config::Error>(())
 /// ```
 pub struct DotEnvSource {
     inner: EnvSource,
@@ -28,15 +28,15 @@ impl DotEnvSource {
     /// `priority` follows the crate convention: lower numbers win.
     ///
     /// # Errors
-    /// Returns [`ConfigError::Other`] if the file cannot be read.
+    /// Returns [`Error::Other`] if the file cannot be read.
     pub fn new(
         path: impl AsRef<Path>,
         prefix: &str,
         separator: &str,
         priority: u32,
-    ) -> Result<Self, ConfigError> {
+    ) -> Result<Self, Error> {
         dotenvy::from_path(path)
-            .map_err(|e| ConfigError::Other(format!("Failed to load .env file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to load .env file: {}", e)))?;
         Ok(Self {
             inner: EnvSource::new(prefix.to_string(), separator.to_string(), priority),
         })
@@ -51,7 +51,7 @@ impl Source for DotEnvSource {
     fn priority(&self) -> u32 {
         self.inner.priority()
     }
-    async fn load(&self) -> Result<Value, ConfigError> {
+    async fn load(&self) -> Result<Value, Error> {
         self.inner.load().await
     }
 }
@@ -59,8 +59,8 @@ impl Source for DotEnvSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::test_helpers::{write_temp, EnvGuard};
-    use crate::source::Source;
+    use crate::config::source::test_helpers::{write_temp, EnvGuard};
+    use crate::config::source::Source;
 
     #[tokio::test]
     async fn loads_dotenv_file() {

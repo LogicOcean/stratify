@@ -5,7 +5,7 @@
 //! Configuration conventionally uses `:`. Both need the same expansion into a
 //! nested [`Value`], so it lives here rather than in either one.
 
-use crate::error::ConfigError;
+use crate::config::error::Error;
 use serde_json::{Map, Value};
 
 /// Expand dot-separated keys into a nested JSON object.
@@ -15,9 +15,9 @@ use serde_json::{Map, Value};
 /// rather than silently resolved by ordering.
 ///
 /// # Errors
-/// Returns [`ConfigError::MergeConflict`] when a key requires a branch where an
+/// Returns [`Error::MergeConflict`] when a key requires a branch where an
 /// earlier key already placed a scalar.
-pub(crate) fn dot_keys_to_json<'a, I>(flat: I) -> Result<Value, ConfigError>
+pub(crate) fn dot_keys_to_json<'a, I>(flat: I) -> Result<Value, Error>
 where
     I: IntoIterator<Item = (&'a String, &'a String)>,
 {
@@ -37,7 +37,7 @@ where
                     .or_insert_with(|| Value::Object(Map::new()));
                 current = match entry.as_object_mut() {
                     Some(obj) => obj,
-                    None => return Err(ConfigError::MergeConflict(key.clone())),
+                    None => return Err(Error::MergeConflict(key.clone())),
                 };
             }
         }
@@ -50,7 +50,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn expand(pairs: &[(&str, &str)]) -> Result<Value, ConfigError> {
+    fn expand(pairs: &[(&str, &str)]) -> Result<Value, Error> {
         let owned: HashMap<String, String> = pairs
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -92,7 +92,7 @@ mod tests {
         let result = expand(&[("db", "flat"), ("db.host", "nested")]);
 
         // Assert
-        assert!(matches!(result, Err(ConfigError::MergeConflict(_))));
+        assert!(matches!(result, Err(Error::MergeConflict(_))));
     }
 
     #[test]

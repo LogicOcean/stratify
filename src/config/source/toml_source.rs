@@ -1,5 +1,5 @@
-use crate::error::ConfigError;
-use crate::source::Source;
+use crate::config::error::Error;
+use crate::config::source::Source;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Example
 /// ```rust
-/// use stratify::source::TomlSource;
+/// use stratify::config::source::TomlSource;
 ///
 /// let source = TomlSource::new("config.toml", 50);
 /// ```
@@ -42,10 +42,10 @@ impl Source for TomlSource {
         self.priority
     }
 
-    async fn load(&self) -> Result<Value, ConfigError> {
+    async fn load(&self) -> Result<Value, Error> {
         let content = std::fs::read_to_string(&self.path)?;
         let toml_val: toml::Value =
-            toml::from_str(&content).map_err(|e| ConfigError::Toml(e.to_string()))?;
+            toml::from_str(&content).map_err(|e| Error::Toml(e.to_string()))?;
         Ok(toml_to_json(toml_val))
     }
 }
@@ -77,7 +77,7 @@ fn toml_to_json(val: toml::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::test_helpers::write_temp;
+    use crate::config::source::test_helpers::write_temp;
 
     #[tokio::test]
     async fn loads_valid_toml() {

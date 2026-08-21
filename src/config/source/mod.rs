@@ -5,14 +5,14 @@ mod azure_source;
 #[cfg(feature = "azure")]
 pub use azure_source::AzureAppConfigSource;
 
-use crate::error::ConfigError;
+use crate::config::error::Error;
 use async_trait::async_trait;
 use serde_json::Value;
 
 /// A source of configuration data, identified by a priority level.
 ///
 /// Lower priority numbers = higher precedence (loaded later, overrides earlier sources).
-/// Implementations must be `Send + Sync` for thread-safe use in [`ConfigStore`](crate::ConfigStore).
+/// Implementations must be `Send + Sync` for thread-safe use in [`Store`](crate::config::Store).
 ///
 /// `load` is asynchronous so that sources can perform I/O over the network, such
 /// as the Azure App Configuration source, without blocking a runtime thread.
@@ -26,7 +26,7 @@ pub trait Source: Send + Sync {
     fn priority(&self) -> u32;
 
     /// Load this source's configuration as a `serde_json::Value`.
-    async fn load(&self) -> Result<Value, ConfigError>;
+    async fn load(&self) -> Result<Value, Error>;
 }
 
 /// Macro to generate a file-based configuration source.
@@ -49,7 +49,7 @@ macro_rules! file_source {
         ///
         /// # Example
         /// ```
-        #[doc = concat!("use stratify::source::", stringify!($name), ";\n")]
+        #[doc = concat!("use stratify::config::source::", stringify!($name), ";\n")]
         #[doc = concat!("let source = ", stringify!($name), "::new(\"config.", $label, "\", 50);\n")]
         /// ```
         pub struct $name {
@@ -70,7 +70,7 @@ macro_rules! file_source {
         }
 
         #[$crate::reexport::async_trait]
-        impl $crate::source::Source for $name {
+        impl $crate::config::source::Source for $name {
             fn name(&self) -> &str {
                 $label
             }
@@ -79,7 +79,7 @@ macro_rules! file_source {
                 self.priority
             }
 
-            async fn load(&self) -> Result<serde_json::Value, $crate::error::ConfigError> {
+            async fn load(&self) -> Result<serde_json::Value, $crate::config::error::Error> {
                 let content = std::fs::read_to_string(&self.path)?;
                 let val: serde_json::Value = $parser(&content)?;
                 Ok(val)

@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use stratify::{ConfigBuilder, ConfigError, Source};
+use stratify::config::{Builder, Error, Source};
 
 /// A source backed by something that is not a file: a database, an HTTP
 /// endpoint, a secret store. Here it is a canned value, but the shape is the
@@ -25,7 +25,7 @@ impl Source for InMemorySource {
         self.priority
     }
 
-    async fn load(&self) -> Result<Value, ConfigError> {
+    async fn load(&self) -> Result<Value, Error> {
         // A real implementation would await a query here.
         Ok(json!({
             "database": { "host": "from-custom-source" },
@@ -36,7 +36,7 @@ impl Source for InMemorySource {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json("examples/config/base.json", 100)
         .source(InMemorySource { priority: 20 })
         .build()

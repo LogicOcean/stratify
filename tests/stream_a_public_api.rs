@@ -134,3 +134,48 @@ fn every_config_type_composes_into_a_working_subscriber() {
     // Assert — the rate limit of 3 is what actually reached the file.
     assert_eq!(lines_written(dir.path()).len(), 3);
 }
+
+#[test]
+fn the_reexported_tracing_reaches_the_sinks() {
+    // Arrange: a consumer with no `tracing` dependency of its own uses the
+    // re-export; the macros are `$crate`-hygienic, so emission and delivery
+    // must work end to end through `stratify::logging::tracing` alone.
+    use stratify::logging::tracing;
+
+    let dir = std::env::temp_dir().join(format!("lk-reexport-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (subscriber, handle) = stratify::logging::builder()
+        .with_filter(stratify::logging::EnvFilter::new("info"))
+        .file(
+            stratify::logging::FileConfig::new(dir.to_string_lossy().to_string())
+                .with_format(stratify::logging::FileFormat::Text),
+        )
+        .build()
+        .expect("builds");
+
+    // Act
+    tracing::subscriber::with_default(subscriber, || {
+        let span = tracing::info_span!("reexported", via = "stratify");
+        let _entered = span.enter();
+        tracing::info!("emitted through the re-export");
+    });
+    handle.flush();
+    drop(handle);
+
+    // Assert
+    let entry = std::fs::read_dir(&dir)
+        .expect("directory")
+        .filter_map(Result::ok)
+        .next()
+        .expect("a log file");
+    let body = std::fs::read_to_string(entry.path()).expect("readable");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        body.contains("emitted through the re-export"),
+        "got: {body}"
+    );
+    assert!(
+        body.contains("via=\"stratify\""),
+        "span fields render: {body}"
+    );
+}

@@ -32,6 +32,17 @@ pub mod settings;
 
 pub use error::Error;
 
+/// The instrumentation API, re-exported whole.
+///
+/// `tracing` is how code *emits* — spans, events, `info!` — and this module is
+/// how those records leave the process. Re-exporting the former from the
+/// latter lets a service depend on stratify alone, with the two halves
+/// guaranteed to agree on a version. `use stratify::logging::tracing;` at the
+/// top of a module makes every existing `tracing::info!(...)` callsite
+/// compile unchanged; the macros are `$crate`-hygienic, so they work without
+/// `tracing` in the consumer's manifest.
+pub use tracing;
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /// The subscriber stack a custom layer is composed onto.

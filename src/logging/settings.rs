@@ -354,13 +354,20 @@ impl Settings {
             .connection_string_key
             .clone()
             .unwrap_or_else(|| super::appinsights::CONNECTION_STRING_VAR.to_lowercase());
-        let connection = store.get_str(&key).ok_or_else(|| {
-            Error::InvalidSettings(format!(
-                "app_insights: the store has no value under {key:?}; the block names \
-                 where the connection string lives, and an explicit block with a \
-                 missing secret is a failure, not an absent exporter"
-            ))
-        })?;
+        // As written first, then lowercased: the natural thing to write here
+        // is the environment variable's uppercase name, and the environment
+        // source stores its keys lowercased. Failing on the obvious spelling
+        // would make the first use of this block a support question.
+        let connection = store
+            .get_str(&key)
+            .or_else(|| store.get_str(&key.to_lowercase()))
+            .ok_or_else(|| {
+                Error::InvalidSettings(format!(
+                    "app_insights: the store has no value under {key:?}; the block names \
+                     where the connection string lives, and an explicit block with a \
+                     missing secret is a failure, not an absent exporter"
+                ))
+            })?;
         let mut config = super::appinsights::AppInsightsConfig::new(connection, &ai.service_name);
         if let Some(rate) = ai.sample_rate {
             config = config.with_sample_rate(rate);
@@ -1041,6 +1048,30 @@ sample_rate = 0.25
 
         // Act / Assert: resolving succeeds; the exporter itself is lazy, so
         // no network is contacted here.
+        assert!(Settings::from_store(&store, "logging").is_ok());
+    }
+
+    #[cfg(feature = "appinsights")]
+    #[tokio::test]
+    async fn the_connection_string_key_matches_its_uppercase_spelling() {
+        // Arrange: the natural thing to write in the block is the environment
+        // variable's name as the environment shows it — uppercase — while the
+        // env source stores keys lowercased. The obvious spelling must work.
+        let toml = r#"
+applicationinsights_connection_string = "InstrumentationKey=00000000-0000-0000-0000-000000000000"
+
+[logging.app_insights]
+service_name = "nse-api"
+connection_string_key = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+"#;
+        let file = write_temp(toml);
+        let store = crate::config::Builder::default()
+            .toml(file.path(), 10)
+            .build()
+            .await
+            .expect("store builds");
+
+        // Act / Assert
         assert!(Settings::from_store(&store, "logging").is_ok());
     }
 

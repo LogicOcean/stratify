@@ -190,8 +190,14 @@ pub fn providers(config: &AppInsightsConfig) -> Result<Providers, Error> {
             .with_resource(resource)
             // Parent-based: a trace is kept or dropped whole. A ratio sampler
             // alone would decide per span and ship traces with holes in them.
+            // The finite check matters because `clamp` propagates NaN, and a
+            // NaN ratio is not a rate the sampler defines behaviour for.
             .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
-                config.sample_rate.clamp(0.0, 1.0),
+                if config.sample_rate.is_finite() {
+                    config.sample_rate.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                },
             ))))
             .build(),
     })

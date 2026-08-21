@@ -13,6 +13,7 @@ use crate::logging::settings::Settings;
 
 /// What [`init`] hands back: the configuration everything else reads, and the
 /// handle that keeps the logging workers alive.
+#[non_exhaustive]
 pub struct Bootstrap {
     /// The merged configuration store.
     pub config: config::Store,
@@ -40,6 +41,7 @@ pub enum InitError {
 
 /// How [`init_with`] builds the stack. [`Options::new`] gives the
 /// conventional setup; every field is overridable from there.
+#[non_exhaustive]
 pub struct Options {
     /// Recorded on every Application Insights record, and useful in file
     /// prefixes. Required because nothing sensible can be defaulted.

@@ -3,8 +3,8 @@
 //! Reads key-values from an App Configuration store over its REST API,
 //! authenticating with an Entra ID token. Available under the `azure` feature.
 
-use crate::error::ConfigError;
-use crate::source::{nesting, Source};
+use crate::config::error::Error;
+use crate::config::source::{nesting, Source};
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use serde::Deserialize;
@@ -46,7 +46,7 @@ struct KeyValuePage {
 ///
 /// Fetches every key-value in the store, optionally filtered to one label, and
 /// maps the keys into nested configuration using the same rules as
-/// [`EnvSource`](crate::source::EnvSource) — `Database:Host` becomes
+/// [`EnvSource`](crate::config::source::EnvSource) — `Database:Host` becomes
 /// `{"database": {"host": ...}}`.
 ///
 /// # Credentials
@@ -60,7 +60,7 @@ struct KeyValuePage {
 /// ```rust,no_run
 /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
 /// use std::sync::Arc;
-/// use stratify::source::AzureAppConfigSource;
+/// use stratify::config::source::AzureAppConfigSource;
 /// // `azure_identity::ManagedIdentityCredential` in Azure,
 /// // `azure_identity::DeveloperToolsCredential` on a workstation.
 /// # let credential: Arc<dyn azure_core::credentials::TokenCredential> = todo!();
@@ -139,7 +139,7 @@ impl AzureAppConfigSource {
     }
 
     /// Fetch every page, following `@nextLink` until exhausted.
-    async fn fetch_all(&self, token: &str) -> Result<Vec<KeyValue>, ConfigError> {
+    async fn fetch_all(&self, token: &str) -> Result<Vec<KeyValue>, Error> {
         let mut url = self.first_page_url();
         let mut collected = Vec::new();
 
@@ -150,23 +150,21 @@ impl AzureAppConfigSource {
                 .bearer_auth(token)
                 .send()
                 .await
-                .map_err(|e| {
-                    ConfigError::Other(format!("App Configuration request failed: {e}"))
-                })?;
+                .map_err(|e| Error::Other(format!("App Configuration request failed: {e}")))?;
 
             let status = response.status();
             if !status.is_success() {
                 // The body often carries the actionable detail (wrong scope,
                 // missing role assignment), so it is worth surfacing.
                 let body = response.text().await.unwrap_or_default();
-                return Err(ConfigError::Other(format!(
+                return Err(Error::Other(format!(
                     "App Configuration returned {status}: {}",
                     body.trim()
                 )));
             }
 
             let page: KeyValuePage = response.json().await.map_err(|e| {
-                ConfigError::Other(format!(
+                Error::Other(format!(
                     "App Configuration response was not valid JSON: {e}"
                 ))
             })?;
@@ -225,13 +223,13 @@ impl Source for AzureAppConfigSource {
         self.priority
     }
 
-    async fn load(&self) -> Result<Value, ConfigError> {
+    async fn load(&self) -> Result<Value, Error> {
         let token = self
             .credential
             .get_token(&[SCOPE], None)
             .await
             .map_err(|e| {
-                ConfigError::Other(format!(
+                Error::Other(format!(
                     "could not acquire an Entra ID token for {SCOPE}: {e}"
                 ))
             })?;
@@ -436,6 +434,6 @@ mod tests {
         let result = source.load().await;
 
         // Assert
-        assert!(matches!(result, Err(ConfigError::Other(_))));
+        assert!(matches!(result, Err(Error::Other(_))));
     }
 }

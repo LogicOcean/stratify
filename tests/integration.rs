@@ -1,4 +1,4 @@
-use stratify::ConfigBuilder;
+use stratify::config::Builder;
 
 #[tokio::test]
 async fn end_to_end_multiple_sources() {
@@ -16,7 +16,7 @@ async fn end_to_end_multiple_sources() {
     )
     .unwrap();
 
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json(base.path(), 100)
         .json(overrides.path(), 50)
         .build()
@@ -44,7 +44,7 @@ async fn deep_merge_nested_objects() {
     )
     .unwrap();
 
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json(base.path(), 100)
         .json(overrides.path(), 50)
         .build()
@@ -74,11 +74,7 @@ async fn deserialize_struct() {
     )
     .unwrap();
 
-    let store = ConfigBuilder::default()
-        .json(f.path(), 0)
-        .build()
-        .await
-        .unwrap();
+    let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
     let cfg: AppConfig = store.get("app").unwrap();
     assert_eq!(cfg.name, "hermes");
@@ -90,11 +86,7 @@ async fn missing_key_is_none() {
     let f = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(f.path(), r#"{"exists": true}"#).unwrap();
 
-    let store = ConfigBuilder::default()
-        .json(f.path(), 0)
-        .build()
-        .await
-        .unwrap();
+    let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
     assert!(store.get_str("missing").is_none());
     assert!(store.get_u64("missing").is_none());
@@ -103,6 +95,6 @@ async fn missing_key_is_none() {
 
 #[tokio::test]
 async fn empty_builder_produces_empty_store() {
-    let store = ConfigBuilder::default().build().await.unwrap();
+    let store = Builder::default().build().await.unwrap();
     assert!(store.get_str("anything").is_none());
 }

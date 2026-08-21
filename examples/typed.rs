@@ -5,7 +5,7 @@
 //! ```
 
 use serde::Deserialize;
-use stratify::ConfigBuilder;
+use stratify::config::Builder;
 
 #[derive(Debug, Deserialize)]
 struct Database {
@@ -19,7 +19,7 @@ struct Database {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json("examples/config/base.json", 100)
         .yaml("examples/config/production.yaml", 50)
         .build()

@@ -1,5 +1,5 @@
-use crate::error::ConfigError;
-use crate::source::{DotEnvSource, EnvSource, JsonSource, Source, YamlSource};
+use crate::config::error::Error;
+use crate::config::source::{DotEnvSource, EnvSource, JsonSource, Source, YamlSource};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -11,9 +11,9 @@ use std::sync::Arc;
 /// # Example
 /// ```rust,no_run
 /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
-/// use stratify::ConfigBuilder;
+/// use stratify::config::Builder;
 ///
-/// let store = ConfigBuilder::default()
+/// let store = Builder::default()
 ///     .json("config/base.json", 100)
 ///     .yaml("config/override.yaml", 50)
 ///     .env("APP_", "__", 10)
@@ -22,11 +22,11 @@ use std::sync::Arc;
 /// # Ok(()) }
 /// ```
 #[derive(Default)]
-pub struct ConfigBuilder {
+pub struct Builder {
     sources: Vec<Arc<dyn Source>>,
 }
 
-impl ConfigBuilder {
+impl Builder {
     /// Add an arbitrary [`Source`] implementation.
     ///
     /// Use this for custom sources that aren't covered by the convenience methods
@@ -34,10 +34,10 @@ impl ConfigBuilder {
     ///
     /// # Example
     /// ```rust
-    /// use stratify::ConfigBuilder;
-    /// use stratify::source::JsonSource;
+    /// use stratify::config::Builder;
+    /// use stratify::config::source::JsonSource;
     ///
-    /// let builder = ConfigBuilder::default()
+    /// let builder = Builder::default()
     ///     .source(JsonSource::new("config/app.json", 100));
     /// ```
     pub fn source(mut self, source: impl Source + 'static) -> Self {
@@ -76,7 +76,7 @@ impl ConfigBuilder {
     /// * `path` — path to the TOML file
     /// * `priority` — lower numbers = higher precedence
     pub fn toml(self, path: impl AsRef<Path>, priority: u32) -> Self {
-        self.source(crate::source::TomlSource::new(path, priority))
+        self.source(crate::config::source::TomlSource::new(path, priority))
     }
 
     /// Add an environment variable source.
@@ -121,7 +121,7 @@ impl ConfigBuilder {
         prefix: impl Into<String>,
         separator: impl Into<String>,
         priority: u32,
-    ) -> Result<Self, ConfigError> {
+    ) -> Result<Self, Error> {
         let source = DotEnvSource::new(path, &prefix.into(), &separator.into(), priority)?;
         Ok(self.source(source))
     }
@@ -136,8 +136,8 @@ impl ConfigBuilder {
     /// developer credential locally without this crate choosing for it.
     ///
     /// For a label filter or a non-default separator, construct
-    /// [`AzureAppConfigSource`](crate::source::AzureAppConfigSource) directly
-    /// and pass it to [`ConfigBuilder::source`].
+    /// [`AzureAppConfigSource`](crate::config::source::AzureAppConfigSource) directly
+    /// and pass it to [`Builder::source`].
     ///
     /// `priority` follows the crate convention: lower numbers win.
     #[cfg(feature = "azure")]
@@ -147,7 +147,8 @@ impl ConfigBuilder {
         credential: std::sync::Arc<dyn azure_core::credentials::TokenCredential>,
         priority: u32,
     ) -> Self {
-        let source = crate::source::AzureAppConfigSource::new(endpoint, credential, priority);
+        let source =
+            crate::config::source::AzureAppConfigSource::new(endpoint, credential, priority);
         self.source(source)
     }
 
@@ -155,7 +156,7 @@ impl ConfigBuilder {
     ///
     /// For settings named by convention rather than by application, such as
     /// `RUST_LOG` or `AZURE_STORAGE_ACCOUNT`, where no prefix selects them and
-    /// nothing else. See [`EnvSource::with_keys`](crate::source::EnvSource::with_keys).
+    /// nothing else. See [`EnvSource::with_keys`](crate::config::source::EnvSource::with_keys).
     ///
     /// `priority` follows the crate convention: lower numbers win.
     pub fn env_keys<I, S>(self, keys: I, separator: impl Into<String>, priority: u32) -> Self
@@ -169,22 +170,22 @@ impl ConfigBuilder {
     /// Consume the builder and return its sources, ordered by precedence.
     ///
     /// Sorted so that the lowest priority number comes first. Most callers want
-    /// [`ConfigBuilder::build`] instead; this is exposed for anyone assembling a
-    /// [`ConfigStore`](crate::ConfigStore) by hand.
+    /// [`Builder::build`] instead; this is exposed for anyone assembling a
+    /// [`Store`](crate::config::Store) by hand.
     pub fn build_sources(mut self) -> Vec<Arc<dyn Source>> {
         self.sources.sort_by_key(|s| s.priority());
         self.sources
     }
 
-    /// Build and load all sources into a [`ConfigStore`](crate::store::ConfigStore).
+    /// Build and load all sources into a [`Store`](crate::config::store::Store).
     ///
     /// This is the terminal operation — after calling `build()`, you get a
-    /// fully-loaded, cached [`ConfigStore`](crate::store::ConfigStore) ready for querying.
+    /// fully-loaded, cached [`Store`](crate::config::store::Store) ready for querying.
     ///
     /// # Errors
     /// Returns `Err` if any source fails to load.
-    pub async fn build(self) -> Result<crate::store::ConfigStore, ConfigError> {
-        crate::store::ConfigStore::from_builder(self).await
+    pub async fn build(self) -> Result<crate::config::store::Store, Error> {
+        crate::config::store::Store::from_builder(self).await
     }
 }
 
@@ -194,7 +195,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_stacks_sources() {
-        let builder = ConfigBuilder::default().json("/tmp/base.json", 100);
+        let builder = Builder::default().json("/tmp/base.json", 100);
 
         let sources = builder.build_sources();
         assert_eq!(sources.len(), 1);
@@ -204,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn toml_source_is_registered() {
-        let builder = ConfigBuilder::default().toml("/tmp/config.toml", 50);
+        let builder = Builder::default().toml("/tmp/config.toml", 50);
         let sources = builder.build_sources();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name(), "toml");
@@ -213,7 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_sources_sorted_by_priority() {
-        let builder = ConfigBuilder::default()
+        let builder = Builder::default()
             .json("/tmp/base.json", 100)
             .yaml("/tmp/override.yaml", 50)
             .env("APP_", "__", 10);
@@ -231,8 +232,8 @@ mod tests {
 
     #[tokio::test]
     async fn source_method_adds_custom_source() {
-        use crate::source::JsonSource;
-        let builder = ConfigBuilder::default().source(JsonSource::new("/tmp/custom.json", 25));
+        use crate::config::source::JsonSource;
+        let builder = Builder::default().source(JsonSource::new("/tmp/custom.json", 25));
 
         let sources = builder.build_sources();
         assert_eq!(sources.len(), 1);
@@ -241,10 +242,10 @@ mod tests {
 
     #[tokio::test]
     async fn dotenv_method_works() {
-        use crate::source::test_helpers::{write_temp, EnvGuard};
+        use crate::config::source::test_helpers::{write_temp, EnvGuard};
 
         let f = write_temp("CONFIGKIT_BUILDER_KEY=built\n");
-        let builder = ConfigBuilder::default().dotenv(f.path(), "CONFIGKIT_B", "__", 5);
+        let builder = Builder::default().dotenv(f.path(), "CONFIGKIT_B", "__", 5);
         // dotenvy loaded the var; ensure cleanup
         let _guard = EnvGuard::remove_on_drop("CONFIGKIT_BUILDER_KEY");
         assert!(builder.is_ok());
@@ -256,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn default_creates_empty_builder() {
-        let builder = ConfigBuilder::default();
+        let builder = Builder::default();
         let sources = builder.build_sources();
         assert!(sources.is_empty());
     }

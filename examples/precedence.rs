@@ -4,13 +4,13 @@
 //! cargo run --example precedence
 //! ```
 
-use stratify::ConfigBuilder;
+use stratify::config::Builder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Three sources all defining database.host. The TOML file has the lowest
     // priority number, so it is the one that wins.
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json("examples/config/base.json", 100) // host = localhost
         .yaml("examples/config/production.yaml", 50) // host = db.prod.internal
         .toml("examples/config/app.toml", 10) // host = db.toml.internal

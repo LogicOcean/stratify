@@ -1,22 +1,22 @@
-use crate::builder::ConfigBuilder;
-use crate::error::ConfigError;
-use crate::source::Source;
+use crate::config::builder::Builder;
+use crate::config::error::Error;
+use crate::config::source::Source;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
 /// Central configuration store that merges multiple sources and caches the result.
 ///
-/// `ConfigStore` is the primary interface for accessing merged configuration.
-/// It loads all sources via a [`ConfigBuilder`], deep-merges them in priority order,
+/// `Store` is the primary interface for accessing merged configuration.
+/// It loads all sources via a [`Builder`], deep-merges them in priority order,
 /// and caches the result behind a [`RwLock`] for thread-safe reads.
 ///
 /// # Example
 /// ```rust,no_run
 /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
-/// use stratify::ConfigBuilder;
+/// use stratify::config::Builder;
 ///
-/// let store = ConfigBuilder::default()
+/// let store = Builder::default()
 ///     .json("base.json", 100)
 ///     .yaml("override.yaml", 50)
 ///     .build().await
@@ -26,18 +26,18 @@ use std::sync::{Arc, RwLock};
 /// # Ok(()) }
 /// ```
 ///
-/// Call [`ConfigStore::refresh`] to reload all sources without recreating the store.
-pub struct ConfigStore {
+/// Call [`Store::refresh`] to reload all sources without recreating the store.
+pub struct Store {
     sources: Vec<Arc<dyn Source>>,
     cache: RwLock<Value>,
 }
 
-impl ConfigStore {
-    /// Create a store by building and loading all sources from a [`ConfigBuilder`].
+impl Store {
+    /// Create a store by building and loading all sources from a [`Builder`].
     ///
-    /// This is called automatically by [`ConfigBuilder::build`]; most users won't
+    /// This is called automatically by [`Builder::build`]; most users won't
     /// call this directly.
-    pub async fn from_builder(builder: ConfigBuilder) -> Result<Self, ConfigError> {
+    pub async fn from_builder(builder: Builder) -> Result<Self, Error> {
         let sources = builder.build_sources();
         let merged = merge_all(&sources).await?;
         Ok(Self {
@@ -54,12 +54,12 @@ impl ConfigStore {
     /// # Errors
     /// Returns `Err` if any source fails to load. The cache is **not** updated
     /// on error — the previous values remain.
-    pub async fn refresh(&self) -> Result<(), ConfigError> {
+    pub async fn refresh(&self) -> Result<(), Error> {
         let merged = merge_all(&self.sources).await?;
         let mut cache = self
             .cache
             .write()
-            .map_err(|e| ConfigError::Other(format!("cache lock poisoned: {e}")))?;
+            .map_err(|e| Error::Other(format!("cache lock poisoned: {e}")))?;
         *cache = merged;
         Ok(())
     }
@@ -69,8 +69,8 @@ impl ConfigStore {
     /// # Example
     /// ```rust,no_run
     /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use stratify::ConfigBuilder;
-    /// # let store = ConfigBuilder::default().build().await.unwrap();
+    /// # use stratify::config::Builder;
+    /// # let store = Builder::default().build().await.unwrap();
     #[doc = "let db_host = store.get_str(\"db.host\");"]
     /// # Ok(()) }
     /// ```
@@ -84,8 +84,8 @@ impl ConfigStore {
     /// # Example
     /// ```rust,no_run
     /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use stratify::ConfigBuilder;
-    /// # let store = ConfigBuilder::default().build().await.unwrap();
+    /// # use stratify::config::Builder;
+    /// # let store = Builder::default().build().await.unwrap();
     #[doc = "let port = store.get_u64(\"port\");"]
     /// # Ok(()) }
     /// ```
@@ -98,9 +98,9 @@ impl ConfigStore {
     /// # Example
     /// ```rust,no_run
     /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use stratify::ConfigBuilder;
+    /// # use stratify::config::Builder;
     /// # // Build a store from an empty builder (doc-tests can't access test_helpers)
-    /// # let store = ConfigBuilder::default().build().await.unwrap();
+    /// # let store = Builder::default().build().await.unwrap();
     /// // With actual config loaded, you'd do:
     /// // assert_eq!(store.get_bool("debug"), Some(true));
     /// let is_set = store.get_bool("feature_enabled");
@@ -119,7 +119,7 @@ impl ConfigStore {
     /// ```rust,no_run
     /// # async fn _example() -> Result<(), Box<dyn std::error::Error>> {
     /// use serde::Deserialize;
-    /// use stratify::ConfigBuilder;
+    /// use stratify::config::Builder;
     ///
     /// #[derive(Deserialize)]
     /// struct DbConfig {
@@ -127,18 +127,18 @@ impl ConfigStore {
     ///     port: u16,
     /// }
     ///
-    /// # let store = ConfigBuilder::default().build().await.unwrap();
+    /// # let store = Builder::default().build().await.unwrap();
     #[doc = "let db: DbConfig = store.get(\"db\").unwrap();"]
     /// # Ok(()) }
     /// ```
     ///
     /// # Errors
     /// Returns `Err` if the key doesn't exist or deserialization fails.
-    pub fn get<T: DeserializeOwned>(&self, key: &str) -> Result<T, ConfigError> {
+    pub fn get<T: DeserializeOwned>(&self, key: &str) -> Result<T, Error> {
         let val = self
             .navigate(key)
-            .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
-        serde_json::from_value(val).map_err(ConfigError::from)
+            .ok_or_else(|| Error::NotFound(key.to_string()))?;
+        serde_json::from_value(val).map_err(Error::from)
     }
 
     /// Return a clone of the entire merged configuration as a [`Value`].
@@ -186,7 +186,7 @@ fn deep_merge(target: &mut Value, other: &Value) {
 ///
 /// The lowest-priority source (highest number) is loaded first, then
 /// higher-priority sources override its values via [`deep_merge`].
-async fn merge_all(sources: &[Arc<dyn Source>]) -> Result<Value, ConfigError> {
+async fn merge_all(sources: &[Arc<dyn Source>]) -> Result<Value, Error> {
     let mut merged = Value::Object(serde_json::Map::new());
     for source in sources.iter().rev() {
         let loaded = source.load().await?;
@@ -198,14 +198,14 @@ async fn merge_all(sources: &[Arc<dyn Source>]) -> Result<Value, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::test_helpers::{write_temp, EnvGuard};
+    use crate::config::source::test_helpers::{write_temp, EnvGuard};
 
     #[tokio::test]
     async fn loads_and_merges_json_config() {
         let base = write_temp(r#"{"host": "localhost", "port": 5432, "debug": false}"#);
         let override_file = write_temp(r#"{"host": "prod.example.com", "debug": true}"#);
 
-        let store = ConfigBuilder::default()
+        let store = Builder::default()
             .json(base.path(), 100)
             .json(override_file.path(), 50)
             .build()
@@ -222,7 +222,7 @@ mod tests {
         let base = write_temp(r#"{"db": {"host": "localhost", "port": 5432}}"#);
         let override_file = write_temp(r#"{"db": {"host": "db.example.com"}}"#);
 
-        let store = ConfigBuilder::default()
+        let store = Builder::default()
             .json(base.path(), 100)
             .json(override_file.path(), 50)
             .build()
@@ -236,11 +236,7 @@ mod tests {
     #[tokio::test]
     async fn refresh_reloads_from_files() {
         let f = write_temp(r#"{"version": 1}"#);
-        let store = ConfigBuilder::default()
-            .json(f.path(), 0)
-            .build()
-            .await
-            .unwrap();
+        let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
         assert_eq!(store.get_u64("version").unwrap(), 1);
 
@@ -261,7 +257,7 @@ mod tests {
         }
 
         let json_file = write_temp(r#"{"db": {"host": "pg.example.com", "port": 5432}}"#);
-        let store = ConfigBuilder::default()
+        let store = Builder::default()
             .json(json_file.path(), 0)
             .build()
             .await
@@ -275,11 +271,7 @@ mod tests {
     #[tokio::test]
     async fn missing_key_returns_none() {
         let f = write_temp(r#"{"exists": true}"#);
-        let store = ConfigBuilder::default()
-            .json(f.path(), 0)
-            .build()
-            .await
-            .unwrap();
+        let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
         assert!(store.get_str("nonexistent").is_none());
         assert!(store.get_u64("nonexistent").is_none());
@@ -289,11 +281,7 @@ mod tests {
     #[tokio::test]
     async fn missing_key_get_typed_returns_error() {
         let f = write_temp(r#"{"exists": true}"#);
-        let store = ConfigBuilder::default()
-            .json(f.path(), 0)
-            .build()
-            .await
-            .unwrap();
+        let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
         let result: Result<Value, _> = store.get("nonexistent");
         assert!(result.is_err());
@@ -301,7 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn builds_from_empty_builder() {
-        let store = ConfigBuilder::default().build().await.unwrap();
+        let store = Builder::default().build().await.unwrap();
         assert_eq!(store.full_config(), Value::Object(serde_json::Map::new()));
     }
 
@@ -310,7 +298,7 @@ mod tests {
         let _guard = EnvGuard::set("CK_T5_HOST", "from-env");
         let file = write_temp(r#"{"host": "from-file", "port": 8080}"#);
 
-        let store = ConfigBuilder::default()
+        let store = Builder::default()
             .json(file.path(), 100) // loaded first (lowest priority)
             .env("CK_T5_", "__", 10) // loaded second (highest priority)
             .build()
@@ -326,11 +314,7 @@ mod tests {
     #[tokio::test]
     async fn full_config_returns_complete_json() {
         let f = write_temp(r#"{"key": "value"}"#);
-        let store = ConfigBuilder::default()
-            .json(f.path(), 0)
-            .build()
-            .await
-            .unwrap();
+        let store = Builder::default().json(f.path(), 0).build().await.unwrap();
 
         let full = store.full_config();
         assert_eq!(full["key"], "value");

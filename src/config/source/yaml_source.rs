@@ -3,8 +3,8 @@ file_source!(YamlSource, "yaml", serde_norway::from_str);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::test_helpers::write_temp;
-    use crate::source::Source;
+    use crate::config::source::test_helpers::write_temp;
+    use crate::config::source::Source;
 
     #[tokio::test]
     async fn loads_valid_yaml() {

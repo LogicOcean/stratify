@@ -1,5 +1,5 @@
-use crate::error::ConfigError;
-use crate::source::Source;
+use crate::config::error::Error;
+use crate::config::source::Source;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// # Example
 /// ```rust,no_run
-/// use stratify::source::EnvSource;
+/// use stratify::config::source::EnvSource;
 /// // With prefix "APP_" and separator "__":
 /// //   APP_HOST=localhost    → {"host": "localhost"}
 /// //   APP_DB__PORT=5432     → {"db": {"port": "5432"}}
@@ -29,7 +29,7 @@ use std::collections::{HashMap, HashSet};
 /// [`EnvSource::with_keys`] captures exactly the variables you name:
 ///
 /// ```rust,no_run
-/// use stratify::source::EnvSource;
+/// use stratify::config::source::EnvSource;
 /// let source = EnvSource::with_keys(["RUST_LOG", "LOG_DIR"], "__", 10);
 /// ```
 pub struct EnvSource {
@@ -72,7 +72,7 @@ impl EnvSource {
     /// `priority` follows the crate convention: lower numbers win.
     ///
     /// ```rust,no_run
-    /// use stratify::source::EnvSource;
+    /// use stratify::config::source::EnvSource;
     /// let source = EnvSource::with_keys(["RUST_LOG", "LOG_DIR"], "__", 10);
     /// ```
     pub fn with_keys<I, S>(keys: I, separator: impl Into<String>, priority: u32) -> Self
@@ -120,17 +120,17 @@ impl Source for EnvSource {
         self.priority
     }
 
-    async fn load(&self) -> Result<Value, ConfigError> {
+    async fn load(&self) -> Result<Value, Error> {
         let flat = self.env_to_flat();
-        crate::source::nesting::dot_keys_to_json(flat.iter())
+        crate::config::source::nesting::dot_keys_to_json(flat.iter())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::test_helpers::EnvGuard;
-    use crate::source::Source;
+    use crate::config::source::test_helpers::EnvGuard;
+    use crate::config::source::Source;
 
     #[tokio::test]
     async fn loads_env_vars_with_prefix() {

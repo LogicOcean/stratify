@@ -6,6 +6,48 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the version is below 1.0, a minor bump may contain breaking changes.
 
+## [0.4.0] — 2026-08-21
+
+stratify absorbs the unpublished `loggingkit` crate. One crate, two namespaces:
+`stratify::config` is the configuration half, `stratify::logging` is a
+non-blocking `tracing` facade, and `stratify::init` stands both up in one call.
+The logging half is behind the `logging` feature and a config-only build
+compiles none of it — CI proves that on every push by failing if the default
+dependency tree contains `tracing-subscriber`, `tracing-appender` or any
+`opentelemetry` crate.
+
+### Changed
+
+- **Breaking:** the config API moved from the crate root into
+  `stratify::config`, and the types shed their prefixes now that the module
+  carries the name: `ConfigBuilder` → `config::Builder`, `ConfigError` →
+  `config::Error`, `ConfigStore` → `config::Store`. `Source` and the source
+  types live under `config::source`.
+- The minimum supported Rust version is now declared: 1.88.0.
+
+### Added
+
+- `stratify::logging` (feature `logging`): console, JSON, file and syslog
+  sinks, all non-blocking; per-sink filters; runtime filter reload; sampling
+  and rate-limit gates; size- and time-based file rotation with retention;
+  custom line formatters; redaction; panic capture; queue-depth and
+  dropped-line accounting. Formerly the `loggingkit` facade, imported here
+  without its history and with its legacy pre-facade API (`LogBuilder`,
+  `LogStore`, the `sink` module) left behind.
+- `logging::settings::Settings` (and per-sink `*Settings` blocks), a serde
+  schema read from a config [`Store`] with `Settings::from_store`. The logging
+  half does no parsing of its own — TOML, YAML, JSON and environment layering
+  are the config half's job, in one place. The old `from_file`, and the `toml`
+  dependency it carried, are gone.
+- `stratify::init` and `init_with` (feature `logging`): read configuration
+  (file < environment < `.env`), build logging from its `[logging]` block,
+  install the subscriber, and return the `Bootstrap` pair. The first record
+  the subscriber carries names the sources that resolved, so a wrong
+  precedence stack is visible instead of silent.
+- Features `appinsights` (Azure Application Insights export with trace
+  correlation) and `compression` (gzip retired log files), both implying
+  `logging`.
+
 ## [0.3.1] — 2026-08-20
 
 ### Added

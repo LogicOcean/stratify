@@ -5,11 +5,11 @@
 //! APP_DATABASE__HOST=from-env cargo run --example basic
 //! ```
 
-use stratify::ConfigBuilder;
+use stratify::config::Builder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         // Remember: lower number wins. base.json is the fallback, so it gets
         // the highest number.
         .json("examples/config/base.json", 100)

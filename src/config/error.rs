@@ -6,7 +6,7 @@ use thiserror::Error;
 /// adding one should not be a breaking change for callers matching on this.
 #[derive(Error, Debug)]
 #[non_exhaustive]
-pub enum ConfigError {
+pub enum Error {
     /// A source file could not be read.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

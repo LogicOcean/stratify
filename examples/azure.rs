@@ -14,8 +14,8 @@
 
 use azure_core::credentials::TokenCredential;
 use std::sync::Arc;
-use stratify::source::AzureAppConfigSource;
-use stratify::ConfigBuilder;
+use stratify::config::source::AzureAppConfigSource;
+use stratify::config::Builder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,13 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `new` already returns an `Arc<Self>`, so there is nothing to wrap.
     let credential = azure_identity::DeveloperToolsCredential::new(None)?;
 
-    // Constructed directly rather than via `ConfigBuilder::azure` so the label
+    // Constructed directly rather than via `Builder::azure` so the label
     // filter can be set. Without a label, every label in the store is fetched
     // and a key present under several resolves unpredictably.
     let azure = AzureAppConfigSource::new(endpoint, credential as Arc<dyn TokenCredential>, 10)
         .with_label("production");
 
-    let store = ConfigBuilder::default()
+    let store = Builder::default()
         .json("examples/config/base.json", 100)
         .source(azure)
         .build()

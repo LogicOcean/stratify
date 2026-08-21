@@ -81,6 +81,13 @@ and no secret has to be distributed either way. Any `TokenCredential` works, whi
 means the source can be tested against a fake.
 
 Keys follow the .NET convention: `Database:Host` becomes `{"database": {"host": …}}`.
+
+A store can hold Key Vault *references* instead of values — the common
+enterprise setup. `with_key_vault_resolution()` resolves them into the secrets
+they point at, reusing the same credential (the identity needs `Key Vault
+Secrets User` on each referenced vault). It is off by default, and encountering
+a reference with it off is an error naming the key, never a JSON envelope
+handed back as a value.
 Filter to one label with `AzureAppConfigSource::with_label`, which you will usually
 want — without it, every label in the store is fetched and a key present under several
 resolves unpredictably.
@@ -141,10 +148,22 @@ rest of your configuration:
 ```toml
 [logging]
 level = "info"
+redact = ["password", "authorization"]
+capture_panics = true
 
 [logging.file]
 directory = "/var/log/myapp"
 rotation = "daily"
+
+[logging.filters]
+app_insights = "info"        # the sink that costs money per event
+
+[logging.app_insights]
+service_name = "my-service"
+sample_rate = 0.25           # fraction of traces exported, kept-or-dropped whole
+# The connection string is a secret: the block names the key it is found
+# under (default: applicationinsights_connection_string), and the value
+# arrives through the store — environment, .env, or a vault-backed source.
 ```
 
 ```rust

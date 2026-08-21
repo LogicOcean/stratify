@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-use tracing_subscriber::filter::EnvFilter;
+// `pub use`: `with_filter` and `reload_filter` take an `EnvFilter`, and
+// without the re-export every caller needs `tracing-subscriber` as a direct
+// dependency just to name the parameter type.
+pub use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::format;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent};
 use tracing_subscriber::layer::{Layered, SubscriberExt};

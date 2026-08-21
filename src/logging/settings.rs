@@ -96,6 +96,35 @@ pub struct Settings {
     /// Allow the filter to be swapped at runtime.
     #[serde(default)]
     pub reloadable: Option<bool>,
+
+    /// Per-sink filter directives, overriding the global filter for one sink.
+    #[serde(default)]
+    pub filters: Option<FilterSettings>,
+
+    /// Field names whose values are masked in rendered text output.
+    #[serde(default)]
+    pub redact: Option<Vec<String>>,
+
+    /// Route panics through the subscriber with payload, file and line.
+    #[serde(default)]
+    pub capture_panics: Option<bool>,
+
+    /// Process-wide fields attached to every line of the text sinks, such as
+    /// a service name or version. A map so the file reads as `key = "value"`.
+    #[serde(default)]
+    pub global_fields: Option<std::collections::BTreeMap<String, String>>,
+
+    /// Syslog sink; absent means no syslog output. Unix only, inert elsewhere.
+    #[serde(default)]
+    pub syslog: Option<SyslogSettings>,
+
+    /// Application Insights export; absent means none.
+    ///
+    /// Applied by [`from_store`](Self::from_store), which resolves the
+    /// connection string, never by [`to_builder`](Self::to_builder) — see
+    /// there for why.
+    #[serde(default)]
+    pub app_insights: Option<AppInsightsSettings>,
 }
 
 impl Settings {
@@ -149,44 +178,132 @@ impl Settings {
     }
 
     /// Load configuration from a TOML string and return a pre-configured Builder.
-    pub fn to_builder(&self) -> super::Builder {
-        let mut builder = super::builder();
-
-        if let Some(level) = &self.level {
-            if let Ok(filter) = EnvFilter::builder().parse(level) {
-                builder = builder.with_filter(filter);
-            }
+    pub fn to_builder(&self) -> Result<super::Builder, Error> {
+        // The block that cannot be honored here fails here, not silently:
+        // resolving a connection string needs the store, so a caller holding
+        // only `Settings` has to go through `from_store`.
+        if self.app_insights.is_some() {
+            return Err(Error::InvalidSettings(
+                "app_insights: this block is applied by Settings::from_store, which can \
+                 resolve the connection string; build from the store, or wire \
+                 AppInsightsConfig on the builder yourself"
+                    .to_string(),
+            ));
         }
+        self.base_builder()
+    }
 
+    /// Everything except `app_insights`, which needs the store.
+    ///
+    /// Split along the same lines as the file format: sinks, then behaviour,
+    /// so each helper stays small enough to read against its block.
+    fn base_builder(&self) -> Result<super::Builder, Error> {
+        let builder = self.apply_sinks(super::builder())?;
+        self.apply_behaviour(builder)
+    }
+
+    /// The output blocks: `console`, `json`, `file`, `syslog`.
+    fn apply_sinks(&self, mut builder: super::Builder) -> Result<super::Builder, Error> {
         if let Some(c) = &self.console {
             builder = builder.console(c.to_console_config());
         }
-
         if let Some(j) = &self.json {
             builder = builder.json(j.to_json_config());
         }
-
         if let Some(fc) = &self.file {
             builder = builder.file(fc.to_file_config());
         }
+        if let Some(s) = &self.syslog {
+            builder = builder.syslog(s.to_syslog_config()?);
+        }
+        Ok(builder)
+    }
 
+    /// Everything that shapes what the sinks see: level, per-sink filters,
+    /// gates, redaction, panic capture, global fields, queue size, reload.
+    fn apply_behaviour(&self, mut builder: super::Builder) -> Result<super::Builder, Error> {
+        if let Some(level) = &self.level {
+            // A typo here must be a startup error naming the key, not a
+            // filter that silently matches nothing.
+            let filter = EnvFilter::builder()
+                .parse(level)
+                .map_err(|e| Error::InvalidSettings(format!("level: {e}")))?;
+            builder = builder.with_filter(filter);
+        }
+        if let Some(filters) = &self.filters {
+            builder = self.apply_sink_filters(builder, filters)?;
+        }
         if let Some(rl) = &self.rate_limit {
             builder = builder.rate_limit(rl.to_rate_limit());
         }
-
         if let Some(s) = &self.sampling {
             builder = builder.sampling(s.to_sample_config());
         }
-
+        if let Some(keys) = &self.redact {
+            builder = builder.redact(keys.iter());
+        }
+        if self.capture_panics.unwrap_or(false) {
+            builder = builder.capture_panics();
+        }
+        if let Some(fields) = &self.global_fields {
+            for (key, value) in fields {
+                builder = builder.global_field(key, value);
+            }
+        }
         if let Some(qs) = self.queue_size {
             builder = builder.queue_size(qs);
         }
-
         if self.reloadable.unwrap_or(false) {
             builder = builder.reloadable();
         }
+        Ok(builder)
+    }
 
-        builder
+    /// The `[filters]` block, one directive per sink.
+    fn apply_sink_filters(
+        &self,
+        mut builder: super::Builder,
+        filters: &FilterSettings,
+    ) -> Result<super::Builder, Error> {
+        if let Some(d) = &filters.console {
+            builder = builder.console_filter(d);
+        }
+        if let Some(d) = &filters.json {
+            builder = builder.json_filter(d);
+        }
+        if let Some(d) = &filters.file {
+            builder = builder.file_filter(d);
+        }
+        if let Some(d) = &filters.syslog {
+            builder = builder.syslog_filter(d);
+        }
+        if let Some(d) = &filters.app_insights {
+            builder = self.app_insights_filter(builder, d)?;
+        }
+        Ok(builder)
+    }
+
+    /// Apply the Application Insights filter directives, or reject them when
+    /// the feature they filter is not compiled in.
+    #[cfg(feature = "appinsights")]
+    fn app_insights_filter(
+        &self,
+        builder: super::Builder,
+        directives: &str,
+    ) -> Result<super::Builder, Error> {
+        Ok(builder.app_insights_filter(directives))
+    }
+
+    #[cfg(not(feature = "appinsights"))]
+    fn app_insights_filter(
+        &self,
+        _builder: super::Builder,
+        _directives: &str,
+    ) -> Result<super::Builder, Error> {
+        Err(Error::InvalidSettings(
+            "filters.app_insights: the appinsights feature is not enabled in this build"
+                .to_string(),
+        ))
     }
 
     /// Read a settings block out of the configuration store.
@@ -205,7 +322,64 @@ impl Settings {
     ///
     /// [`config::Error::NotFound`]: crate::config::Error::NotFound
     pub fn from_store(store: &crate::config::Store, key: &str) -> Result<super::Builder, Error> {
-        Ok(Self::read(store, key)?.to_builder())
+        Self::read(store, key)?.apply(store)
+    }
+
+    /// Turn these settings into a builder, resolving anything that needs the
+    /// store — today, the `[app_insights]` connection string.
+    ///
+    /// [`from_store`](Self::from_store) is `read` followed by this.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`to_builder`](Self::to_builder) can report, plus
+    /// [`Error::InvalidSettings`] when the `app_insights` block names a key
+    /// the store cannot answer: an explicit block is intent, so a missing
+    /// secret is a failure rather than a silently absent exporter.
+    pub fn apply(&self, store: &crate::config::Store) -> Result<super::Builder, Error> {
+        let builder = self.base_builder()?;
+        self.apply_app_insights(builder, store)
+    }
+
+    #[cfg(feature = "appinsights")]
+    fn apply_app_insights(
+        &self,
+        builder: super::Builder,
+        store: &crate::config::Store,
+    ) -> Result<super::Builder, Error> {
+        let Some(ai) = &self.app_insights else {
+            return Ok(builder);
+        };
+        let key = ai
+            .connection_string_key
+            .clone()
+            .unwrap_or_else(|| super::appinsights::CONNECTION_STRING_VAR.to_lowercase());
+        let connection = store.get_str(&key).ok_or_else(|| {
+            Error::InvalidSettings(format!(
+                "app_insights: the store has no value under {key:?}; the block names \
+                 where the connection string lives, and an explicit block with a \
+                 missing secret is a failure, not an absent exporter"
+            ))
+        })?;
+        let mut config = super::appinsights::AppInsightsConfig::new(connection, &ai.service_name);
+        if let Some(rate) = ai.sample_rate {
+            config = config.with_sample_rate(rate);
+        }
+        Ok(builder.app_insights(config))
+    }
+
+    #[cfg(not(feature = "appinsights"))]
+    fn apply_app_insights(
+        &self,
+        builder: super::Builder,
+        _store: &crate::config::Store,
+    ) -> Result<super::Builder, Error> {
+        if self.app_insights.is_some() {
+            return Err(Error::InvalidSettings(
+                "app_insights: the appinsights feature is not enabled in this build".to_string(),
+            ));
+        }
+        Ok(builder)
     }
 
     /// Read a settings block, leaving the missing-vs-invalid distinction to
@@ -489,6 +663,92 @@ impl Default for JsonSettings {
     }
 }
 
+/// The `[logging.filters]` block: per-sink filter directives.
+///
+/// Directives use `RUST_LOG` syntax and are validated at build time, so a typo
+/// is a startup error naming the sink rather than a filter that silently
+/// matches nothing.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilterSettings {
+    /// Console sink directives.
+    #[serde(default)]
+    pub console: Option<String>,
+    /// JSON sink directives.
+    #[serde(default)]
+    pub json: Option<String>,
+    /// File sink directives.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Syslog sink directives.
+    #[serde(default)]
+    pub syslog: Option<String>,
+    /// Application Insights directives — the usual reason this block exists,
+    /// because the exporter is the sink that costs money per event.
+    #[serde(default)]
+    pub app_insights: Option<String>,
+}
+
+/// The `[logging.syslog]` block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyslogSettings {
+    /// The tag identifying this process in each message.
+    pub tag: String,
+    /// `"user"`, `"daemon"` (default), or `"local0"` through `"local7"`.
+    #[serde(default)]
+    pub facility: Option<String>,
+}
+
+impl SyslogSettings {
+    fn to_syslog_config(&self) -> Result<super::syslog::SyslogConfig, Error> {
+        use super::syslog::Facility;
+        let facility = match self.facility.as_deref() {
+            None => Facility::Daemon,
+            Some("user") => Facility::User,
+            Some("daemon") => Facility::Daemon,
+            Some("local0") => Facility::Local0,
+            Some("local1") => Facility::Local1,
+            Some("local2") => Facility::Local2,
+            Some("local3") => Facility::Local3,
+            Some("local4") => Facility::Local4,
+            Some("local5") => Facility::Local5,
+            Some("local6") => Facility::Local6,
+            Some("local7") => Facility::Local7,
+            Some(other) => {
+                return Err(Error::InvalidSettings(format!(
+                    "syslog.facility: unknown facility {other:?}; expected user, daemon, or local0..local7"
+                )))
+            }
+        };
+        Ok(super::syslog::SyslogConfig::new(&self.tag).with_facility(facility))
+    }
+}
+
+/// The `[logging.app_insights]` block.
+///
+/// The connection string is a secret, so the block names the *key* it is found
+/// under rather than holding the value: the file stays safe to commit, and the
+/// secret arrives through the store — environment, `.env`, or a vault-backed
+/// source — like everything else.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppInsightsSettings {
+    /// Reported as the service name, so several services in one workspace can
+    /// be told apart. Required: nothing sensible can be defaulted.
+    pub service_name: String,
+    /// Store key holding the connection string. Defaults to
+    /// `applicationinsights_connection_string`, the conventional variable
+    /// lowercased the way the environment source stores it.
+    #[serde(default)]
+    pub connection_string_key: Option<String>,
+    /// Fraction of traces exported, `0.0..=1.0`. Defaults to `1.0`. Log
+    /// records are not sampled — this bounds the span volume, which is what
+    /// grows with traffic.
+    #[serde(default)]
+    pub sample_rate: Option<f64>,
+}
+
 impl Default for FileSettings {
     fn default() -> Self {
         Self {
@@ -636,6 +896,152 @@ min_level = "debug"
         let s = cfg.sampling.unwrap();
         assert_eq!(s.rate, 15.0); // stored as-is, clamped in to_sample_config
         assert_eq!(s.to_sample_config().rate, 1.0);
+    }
+
+    #[tokio::test]
+    async fn the_full_surface_parses_from_one_block() {
+        let toml = r#"
+[logging]
+level = "info"
+redact = ["password", "authorization"]
+capture_panics = true
+
+[logging.filters]
+console = "warn"
+file = "debug"
+
+[logging.global_fields]
+service = "nse-api"
+version = "1.0.0"
+
+[logging.syslog]
+tag = "nse"
+facility = "local3"
+
+[logging.console]
+color = false
+"#;
+        let cfg = read_logging(toml).await.unwrap();
+        assert_eq!(
+            cfg.redact.as_deref(),
+            Some(&["password".to_string(), "authorization".to_string()][..])
+        );
+        assert_eq!(cfg.capture_panics, Some(true));
+        let filters = cfg.filters.as_ref().unwrap();
+        assert_eq!(filters.console.as_deref(), Some("warn"));
+        assert_eq!(filters.file.as_deref(), Some("debug"));
+        let fields = cfg.global_fields.as_ref().unwrap();
+        assert_eq!(fields.get("service").map(String::as_str), Some("nse-api"));
+        assert_eq!(cfg.syslog.as_ref().unwrap().tag, "nse");
+
+        // And the whole thing builds.
+        assert!(cfg.to_builder().is_ok());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_syslog_facility_is_a_startup_error_naming_the_key() {
+        let toml = r#"
+[logging.syslog]
+tag = "nse"
+facility = "local9"
+"#;
+        let cfg = read_logging(toml).await.unwrap();
+        let error = match cfg.to_builder() {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("local9 does not exist"),
+        };
+        assert!(error.contains("syslog.facility"), "got: {error}");
+        assert!(error.contains("local9"), "got: {error}");
+    }
+
+    #[tokio::test]
+    async fn an_invalid_level_is_a_startup_error_not_a_silent_default() {
+        let toml = r#"
+[logging]
+level = "not[a]filter"
+"#;
+        let cfg = read_logging(toml).await.unwrap();
+        let error = match cfg.to_builder() {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("the level must parse"),
+        };
+        assert!(error.contains("level"), "got: {error}");
+    }
+
+    #[cfg(feature = "appinsights")]
+    #[tokio::test]
+    async fn to_builder_refuses_an_app_insights_block_it_cannot_resolve() {
+        // Arrange: the block needs the store; a caller holding only the
+        // settings must be sent to from_store rather than silently losing
+        // the exporter they configured.
+        let toml = r#"
+[logging.app_insights]
+service_name = "nse-api"
+"#;
+        let cfg = read_logging(toml).await.unwrap();
+
+        // Act
+        let error = match cfg.to_builder() {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("the block needs the store"),
+        };
+
+        // Assert
+        assert!(error.contains("from_store"), "got: {error}");
+    }
+
+    #[cfg(feature = "appinsights")]
+    #[tokio::test]
+    async fn an_app_insights_block_with_no_secret_in_the_store_fails_loudly() {
+        // Arrange: an explicit block is intent; a missing secret must not
+        // become a silently absent exporter.
+        let toml = r#"
+[logging.app_insights]
+service_name = "nse-api"
+"#;
+        let file = write_temp(toml);
+        let store = crate::config::Builder::default()
+            .toml(file.path(), 10)
+            .build()
+            .await
+            .expect("store builds");
+
+        // Act
+        let error = match Settings::from_store(&store, "logging") {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("no connection string anywhere"),
+        };
+
+        // Assert: names the key it looked under.
+        assert!(
+            error.contains("applicationinsights_connection_string"),
+            "got: {error}"
+        );
+    }
+
+    #[cfg(feature = "appinsights")]
+    #[tokio::test]
+    async fn an_app_insights_block_resolves_its_secret_through_the_store() {
+        // Arrange: the connection string sits in the store under the block's
+        // named key, the way the environment or a vault source would put it.
+        let toml = r#"
+connection = "InstrumentationKey=00000000-0000-0000-0000-000000000000"
+
+[logging.app_insights]
+service_name = "nse-api"
+connection_string_key = "connection"
+sample_rate = 0.25
+"#;
+        let file = write_temp(toml);
+        let store = crate::config::Builder::default()
+            .toml(file.path(), 10)
+            .build()
+            .await
+            .expect("store builds");
+
+        // Act / Assert: resolving succeeds; the exporter itself is lazy, so
+        // no network is contacted here.
+        assert!(Settings::from_store(&store, "logging").is_ok());
     }
 
     #[tokio::test]

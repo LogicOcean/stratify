@@ -58,4 +58,10 @@ pub enum Error {
     /// configuration store.
     #[error("could not read logging settings: {0}")]
     Settings(#[from] crate::config::Error),
+
+    /// The settings block deserialized but asks for something invalid or
+    /// unavailable: a bad level, an unknown facility, a feature that is not
+    /// compiled in. The message names the key.
+    #[error("invalid logging settings: {0}")]
+    InvalidSettings(String),
 }

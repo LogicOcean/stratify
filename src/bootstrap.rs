@@ -107,26 +107,15 @@ pub async fn init_with(options: Options) -> Result<Bootstrap, InitError> {
     // The settings block is optional; anything else wrong with it is not.
     // Distinguishing here is the whole reason `Settings::read` exposes the
     // NotFound case instead of folding it into one error.
-    let builder = match Settings::read(&store, &options.logging_key) {
-        Ok(settings) => settings.to_builder(),
-        Err(config::Error::NotFound(_)) => {
-            logging::builder().console(logging::ConsoleConfig::default())
-        }
+    let settings = match Settings::read(&store, &options.logging_key) {
+        Ok(settings) => Some(settings),
+        Err(config::Error::NotFound(_)) => None,
         Err(e) => return Err(InitError::Logging(logging::Error::Settings(e))),
     };
 
-    // Shadowed rather than mutated so the binding stays immutable when the
-    // feature is off. Present means on: the connection string is a secret, so
-    // it arrives through the store (environment, `.env`, or a vault-backed
-    // source) and never sits in the TOML itself.
-    #[cfg(feature = "appinsights")]
-    let builder = {
-        let lookup = |name: &str| store.get_str(&name.to_lowercase());
-        match logging::appinsights::AppInsightsConfig::from_lookup(&options.service_name, lookup) {
-            Ok(config) => builder.app_insights(config),
-            Err(_) => builder, // not configured: a choice, not a failure
-        }
-    };
+    let builder = logging_builder(&settings, &store)?;
+    let builder = apply_store_level(builder, &settings, &store)?;
+    let builder = auto_app_insights(builder, &settings, &store, &options.service_name);
 
     let handle = builder.init()?;
 
@@ -144,6 +133,83 @@ pub async fn init_with(options: Options) -> Result<Bootstrap, InitError> {
         config: store,
         logging: handle,
     })
+}
+
+/// The builder the settings describe, or the console-only default when no
+/// block exists.
+///
+/// `apply` resolves anything needing the store — the `app_insights` block
+/// above all — so an explicit block is honored or fails loudly here.
+fn logging_builder(
+    settings: &Option<Settings>,
+    store: &config::Store,
+) -> Result<logging::Builder, InitError> {
+    Ok(match settings {
+        Some(settings) => settings.apply(store)?,
+        None => logging::builder().console(logging::ConsoleConfig::default()),
+    })
+}
+
+/// With no explicit level, fall back to `rust_log` *from the store* rather
+/// than the process environment.
+///
+/// The distinction matters: the builder's own fallback reads `std::env`,
+/// which a `.env` loaded as a source never reaches, so a `RUST_LOG` written
+/// there would silently lose to a shell export — the exact inversion this
+/// crate's `.env` precedence promises. Sourced from configuration, a typo is
+/// a startup error, not a lenient best-effort parse.
+fn apply_store_level(
+    builder: logging::Builder,
+    settings: &Option<Settings>,
+    store: &config::Store,
+) -> Result<logging::Builder, InitError> {
+    if settings.as_ref().and_then(|s| s.level.as_deref()).is_some() {
+        return Ok(builder);
+    }
+    let Some(directives) = store.get_str("rust_log") else {
+        return Ok(builder);
+    };
+    let filter = logging::EnvFilter::builder()
+        .parse(&directives)
+        .map_err(|e| {
+            InitError::Logging(logging::Error::InvalidSettings(format!("rust_log: {e}")))
+        })?;
+    Ok(builder.with_filter(filter))
+}
+
+/// Turn the exporter on when the conventional connection string is reachable
+/// and no settings block claimed it.
+///
+/// An explicit `[logging.app_insights]` already resolved (or failed) inside
+/// `Settings::apply`, and detecting on top of it would double-wire. Present
+/// means on: the connection string is a secret, so it arrives through the
+/// store (environment, `.env`, or a vault-backed source) and never sits in
+/// the TOML itself. Its absence is a choice, not a failure.
+#[cfg(feature = "appinsights")]
+fn auto_app_insights(
+    builder: logging::Builder,
+    settings: &Option<Settings>,
+    store: &config::Store,
+    service_name: &str,
+) -> logging::Builder {
+    if settings.as_ref().is_some_and(|s| s.app_insights.is_some()) {
+        return builder;
+    }
+    let lookup = |name: &str| store.get_str(&name.to_lowercase());
+    match logging::appinsights::AppInsightsConfig::from_lookup(service_name, lookup) {
+        Ok(config) => builder.app_insights(config),
+        Err(_) => builder,
+    }
+}
+
+#[cfg(not(feature = "appinsights"))]
+fn auto_app_insights(
+    builder: logging::Builder,
+    _settings: &Option<Settings>,
+    _store: &config::Store,
+    _service_name: &str,
+) -> logging::Builder {
+    builder
 }
 
 /// Assemble the store for [`Options`]. Split out so the precedence numbers

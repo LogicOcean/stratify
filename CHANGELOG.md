@@ -49,6 +49,37 @@ dependency tree contains `tracing-subscriber`, `tracing-appender` or any
 - Features `appinsights` (Azure Application Insights export with trace
   correlation) and `compression` (gzip retired log files), both implying
   `logging`.
+- Full settings parity: `[logging.filters]` (per-sink directives), `redact`,
+  `capture_panics`, `[logging.global_fields]`, `[logging.syslog]` and
+  `[logging.app_insights]` are all expressible in configuration, so "described
+  rather than coded" covers the whole builder surface. The `app_insights`
+  block names the *key* the connection string is found under rather than
+  holding the value, so the file stays safe to commit; an explicit block whose
+  secret is missing is a startup error, not a silently absent exporter. A bad
+  `level`, an unknown syslog facility, or a block needing a feature that is
+  not compiled in all fail loudly at startup naming the offending key —
+  `Settings::to_builder` is fallible now for exactly that reason.
+- `AppInsightsConfig::with_sample_rate`, bounding the fraction of traces
+  exported (`0.0..=1.0`, parent-based so a trace is kept or dropped whole).
+  Exporting every span is an Application Insights bill that grows linearly
+  with traffic; this is the knob. Log records are not sampled — per-sink
+  filters are the tool for those. Also settable as `sample_rate` in the
+  `[logging.app_insights]` block.
+- `init` reads `rust_log` from the *store* when no explicit level is set, so a
+  `RUST_LOG` written in `.env` obeys the store's precedence instead of
+  silently losing to a shell export — the builder's own fallback reads the
+  process environment, which a `.env` loaded as a source never touches.
+  Sourced from configuration it is validated strictly: a typo is a startup
+  error naming the key.
+- `AzureAppConfigSource::with_key_vault_resolution`, resolving Key Vault
+  references into the secrets they point at, reusing the source's credential
+  against the vault data plane. Off by default because resolution widens the
+  source's reach from one store to every vault the references name; with it
+  off, *encountering* a reference is an error naming the key — loud, rather
+  than a JSON envelope masquerading as a configuration value.
+- `stratify::logging::EnvFilter`, re-exported so `with_filter` and
+  `reload_filter` can be called without taking `tracing-subscriber` as a
+  direct dependency.
 
 ## [0.3.1] — 2026-08-20
 

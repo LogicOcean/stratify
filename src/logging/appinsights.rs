@@ -11,7 +11,7 @@
 use super::error::Error;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 
 /// Where events land in Application Insights, and under what identity.
@@ -23,6 +23,14 @@ pub struct AppInsightsConfig {
     /// Reported as the service name, so several services in one workspace can
     /// be told apart.
     pub service_name: String,
+    /// Fraction of traces exported, `0.0..=1.0`. Defaults to `1.0`.
+    ///
+    /// At production traffic, exporting every span is an Application Insights
+    /// bill that grows linearly with load; this is the knob that bounds it.
+    /// Sampling is parent-based, so a trace is kept or dropped whole rather
+    /// than arriving with holes in it. Log records are not sampled — the
+    /// per-sink filter is the tool for those.
+    pub sample_rate: f64,
 }
 
 /// The environment variable Azure Monitor's own SDKs read.
@@ -37,7 +45,15 @@ impl AppInsightsConfig {
         Self {
             connection_string: connection_string.into(),
             service_name: service_name.into(),
+            sample_rate: 1.0,
         }
+    }
+
+    /// Export this fraction of traces. Clamped to `0.0..=1.0` when applied.
+    #[must_use]
+    pub fn with_sample_rate(mut self, rate: f64) -> Self {
+        self.sample_rate = rate;
+        self
     }
 
     /// Read the connection string from [`CONNECTION_STRING_VAR`].
@@ -172,6 +188,11 @@ pub fn providers(config: &AppInsightsConfig) -> Result<Providers, Error> {
         tracer: SdkTracerProvider::builder()
             .with_batch_exporter(exporter)
             .with_resource(resource)
+            // Parent-based: a trace is kept or dropped whole. A ratio sampler
+            // alone would decide per span and ship traces with holes in them.
+            .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+                config.sample_rate.clamp(0.0, 1.0),
+            ))))
             .build(),
     })
 }
@@ -329,6 +350,37 @@ mod tests {
         assert_eq!(seen.take().as_deref(), Some(CONNECTION_STRING_VAR));
         assert_eq!(config.connection_string, "InstrumentationKey=abc");
         assert_eq!(config.service_name, "svc");
+    }
+
+    #[test]
+    fn the_sample_rate_defaults_to_everything() {
+        // Arrange / Act
+        let config = AppInsightsConfig::new("cs", "svc");
+
+        // Assert: 1.0 keeps today's behaviour for anyone not setting it.
+        assert_eq!(config.sample_rate, 1.0);
+    }
+
+    #[test]
+    fn an_out_of_range_sample_rate_still_builds_providers() {
+        // Arrange: the clamp lives at the point of use, so a wild value is
+        // corrected rather than panicking inside the exporter.
+        let config = AppInsightsConfig::new(
+            "InstrumentationKey=00000000-0000-0000-0000-000000000000;\
+             IngestionEndpoint=https://unroutable.invalid/",
+            "svc",
+        )
+        .with_sample_rate(3.0);
+
+        // Act
+        let built = providers(&config);
+
+        // Assert: construction is lazy, so this exercises the sampler wiring
+        // without contacting the network.
+        assert!(built.is_ok());
+        if let Ok(p) = built {
+            p.shutdown();
+        }
     }
 
     #[test]

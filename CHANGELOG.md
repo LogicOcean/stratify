@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.0.1] — 2026-08-21
+
+### Fixed
+
+- Span fields no longer carry ANSI escape codes into files or colourless
+  consoles. The escape codes were coming from span-field *caching*: the
+  layer's own ANSI flag — which defaulted on — decides how a span's fields are
+  rendered into the cache every event then prints verbatim, and the sinks only
+  ever set the flag on the event format. Found live: a web service's
+  per-request span (`http_request{method=…}`) arrived in its log file wrapped
+  in italic/dim codes with colour configured off everywhere.
+
+  The file sinks also get their own cache now (a distinct field-formatter
+  type), so a *coloured* console beside a text file cannot bleed escape codes
+  into it either — previously the two shared one cache and whichever layer
+  formatted a span first decided what the other printed, which is why services
+  had to switch console colour off to protect their files. Both regressions
+  are pinned by tests that fail against the previous release.
+
 ## [1.0.0] — 2026-08-21
 
 The stability release. From here, a breaking change to anything public is a

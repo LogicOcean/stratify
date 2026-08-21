@@ -36,6 +36,29 @@ impl<L> Sink<L> {
     }
 }
 
+/// `DefaultFields` under a different type, so file sinks get their own span
+/// cache.
+///
+/// `tracing-subscriber` formats a span's fields once per *field-formatter
+/// type* and caches the result in the span's extensions. With every text sink
+/// on `DefaultFields`, they all share one cache, so whichever layer touches a
+/// span first decides — with its own ANSI setting — what every other layer
+/// prints for that span. That is how a coloured console used to write escape
+/// codes into the log file. A distinct type is a distinct cache slot: file
+/// sinks always cache plain, and the console is free to colour its own.
+#[derive(Default)]
+pub(super) struct PlainFields(fmt::format::DefaultFields);
+
+impl<'writer> fmt::FormatFields<'writer> for PlainFields {
+    fn format_fields<R: tracing_subscriber::field::RecordFields>(
+        &self,
+        writer: fmt::format::Writer<'writer>,
+        fields: R,
+    ) -> std::fmt::Result {
+        self.0.format_fields(writer, fields)
+    }
+}
+
 /// The console sink, using the built-in layout.
 ///
 /// Returns nothing when a caller-supplied formatter is in play; that case is
@@ -66,6 +89,11 @@ where
         layer: Some(
             fmt::layer()
                 .with_writer(writer.clone())
+                // On the *layer*, not only the format: the layer's flag is
+                // what controls how span fields are cached into the span's
+                // extensions, and the cached string is printed verbatim by
+                // every event that closes over the span.
+                .with_ansi(config.use_color)
                 .event_format(WithGlobals {
                     inner: built_in,
                     prefix: globals.to_string(),
@@ -96,6 +124,9 @@ where
         layer: Some(
             fmt::layer()
                 .with_writer(writer.clone())
+                // Plain span cache: a custom formatter styles its own line,
+                // and the `SpanScope` it receives is rendered from this cache.
+                .with_ansi(false)
                 .event_format(WithGlobals {
                     inner: BoxedFormat(format),
                     prefix: globals.to_string(),
@@ -209,11 +240,20 @@ where
         .with_target(true)
         .with_timer(Timestamp(config.timestamp));
 
-    Some(fmt::layer().with_writer(writer).event_format(WithGlobals {
-        inner: built_in,
-        prefix: globals.to_string(),
-        redact: redact.to_vec(),
-    }))
+    Some(
+        fmt::layer()
+            .with_writer(writer)
+            // `PlainFields` gives this sink its own span cache, and the layer
+            // flag keeps that cache free of escape codes, so a coloured
+            // console beside this file cannot bleed ANSI into it.
+            .fmt_fields(PlainFields::default())
+            .with_ansi(false)
+            .event_format(WithGlobals {
+                inner: built_in,
+                prefix: globals.to_string(),
+                redact: redact.to_vec(),
+            }),
+    )
 }
 
 /// The file sink in plain text, using a caller-supplied formatter.
@@ -236,11 +276,18 @@ where
         return None;
     }
     let format = format?;
-    Some(fmt::layer().with_writer(writer).event_format(WithGlobals {
-        inner: BoxedFormat(format),
-        prefix: globals.to_string(),
-        redact: redact.to_vec(),
-    }))
+    Some(
+        fmt::layer()
+            .with_writer(writer)
+            // Same reasoning as `file_text`: own cache, kept plain.
+            .fmt_fields(PlainFields::default())
+            .with_ansi(false)
+            .event_format(WithGlobals {
+                inner: BoxedFormat(format),
+                prefix: globals.to_string(),
+                redact: redact.to_vec(),
+            }),
+    )
 }
 
 /// Reproduce a per-sink filter, or one that admits everything.

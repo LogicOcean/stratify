@@ -1,6 +1,6 @@
 [package]
 name = "stratify"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 rust-version = "1.88.0"
 description = "Layered configuration and structured logging for Rust services: pluggable sources, priority merging, typed access, and a tracing facade"

@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use stratify::logging::{FileConfig, FileFormat};
+use stratify::logging::{ConsoleConfig, FileConfig, FileFormat};
 use tracing::subscriber::with_default;
 
 fn scratch(label: &str) -> PathBuf {
@@ -130,4 +130,84 @@ fn json_format_is_still_available_explicitly() {
     assert!(contents.contains("\"level\":\"INFO\""), "got: {contents}");
 
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn span_fields_in_the_file_carry_no_ansi_even_with_color_off_everywhere() {
+    // Arrange: every sink colourless — the configuration a service captured
+    // into Log Analytics runs. Span fields used to arrive with italic/dim
+    // escape codes anyway, because the *layer's* ANSI flag, not the event
+    // format's, decides how span fields are cached, and it defaulted on.
+    let dir = std::env::temp_dir().join(format!("lk-ansi-off-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let (subscriber, handle) = stratify::logging::builder()
+        .with_filter(stratify::logging::EnvFilter::new("info"))
+        .console(ConsoleConfig::default().with_color(false))
+        .file(FileConfig::new(dir.to_string_lossy().to_string()).with_format(FileFormat::Text))
+        .build()
+        .expect("builds");
+
+    // Act: the event fires inside a span carrying fields, which is what the
+    // per-request middleware of a web service produces on every line.
+    with_default(subscriber, || {
+        let span = tracing::info_span!("http_request", method = "GET", path = "/health");
+        let _entered = span.enter();
+        tracing::info!(latency = 3, "finished");
+    });
+    handle.flush();
+    drop(handle);
+
+    // Assert
+    let entry = fs::read_dir(&dir)
+        .expect("directory")
+        .filter_map(Result::ok)
+        .next()
+        .expect("a log file");
+    let body = fs::read_to_string(entry.path()).expect("readable");
+    let _ = fs::remove_dir_all(&dir);
+
+    assert!(body.contains("http_request"), "the span renders: {body}");
+    assert!(
+        !body.contains('\u{1b}'),
+        "no escape codes anywhere in the file: {body:?}"
+    );
+}
+
+#[test]
+fn a_colored_console_cannot_bleed_ansi_into_the_file() {
+    // Arrange: console colour *on*, beside a text file. These used to share
+    // one span-field cache, so whichever layer formatted a span first decided
+    // what the other printed — the reason services had to turn console colour
+    // off to protect their files. The file sink now has its own cache.
+    let dir = std::env::temp_dir().join(format!("lk-ansi-bleed-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let (subscriber, handle) = stratify::logging::builder()
+        .with_filter(stratify::logging::EnvFilter::new("info"))
+        .console(ConsoleConfig::default().with_color(true))
+        .file(FileConfig::new(dir.to_string_lossy().to_string()).with_format(FileFormat::Text))
+        .build()
+        .expect("builds");
+
+    // Act
+    with_default(subscriber, || {
+        let span = tracing::info_span!("http_request", method = "GET");
+        let _entered = span.enter();
+        tracing::info!("finished");
+    });
+    handle.flush();
+    drop(handle);
+
+    // Assert
+    let entry = fs::read_dir(&dir)
+        .expect("directory")
+        .filter_map(Result::ok)
+        .next()
+        .expect("a log file");
+    let body = fs::read_to_string(entry.path()).expect("readable");
+    let _ = fs::remove_dir_all(&dir);
+
+    assert!(
+        !body.contains('\u{1b}'),
+        "console colour must stay out of the file: {body:?}"
+    );
 }

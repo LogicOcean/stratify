@@ -1446,7 +1446,7 @@ impl JsonConfig {
 /// drop counters. Clones are full-strength — they share the same writers.
 pub struct Handle {
     /// The reload channel, present when the stack was built `reloadable`.
-    pub reload_tx: Option<reload::ReloadHandle>,
+    reload_tx: Option<reload::ReloadHandle>,
     /// The console (stderr) writer, when a console layer was configured.
     console: Option<FlushableWriter>,
     /// The JSON (stdout) writer, when a JSON layer was configured.
@@ -1574,6 +1574,27 @@ impl Handle {
             providers.force_flush();
         }
         flush_handle(self);
+    }
+
+    /// Flush everything, then shut the exporter down cleanly.
+    ///
+    /// The last call before the process exits. [`flush`](Handle::flush) drains
+    /// what is queued but leaves the Application Insights exporter running;
+    /// this also closes it, which is what ends the batch-export loop and its
+    /// scratch thread rather than abandoning them mid-cycle. Local sinks need
+    /// no closing — their workers stop when the last handle drops.
+    ///
+    /// Takes `self` because a shut-down handle must not be reused: logging
+    /// keeps working, but records after this never reach Application
+    /// Insights, so holding a live-looking handle past it would lie. Other
+    /// clones (including the stored one driving [`flush`](flush())) are unaffected
+    /// except that the exporter they share is now closed.
+    pub fn shutdown(self) {
+        self.flush();
+        #[cfg(feature = "appinsights")]
+        if let Some(providers) = &self.app_insights {
+            providers.shutdown();
+        }
     }
 }
 

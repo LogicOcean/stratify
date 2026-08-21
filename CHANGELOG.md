@@ -4,9 +4,11 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the version is below 1.0, a minor bump may contain breaking changes.
+## [1.0.0] — 2026-08-21
 
-## [0.4.0] — 2026-08-21
+The stability release. From here, a breaking change to anything public is a
+major version, so the 0.4-era caveat about minor bumps is retired along with
+the number.
 
 stratify absorbs the unpublished `loggingkit` crate. One crate, two namespaces:
 `stratify::config` is the configuration half, `stratify::logging` is a

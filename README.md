@@ -57,7 +57,7 @@ Implement [`Source`] for anything else — a database, a secret store, an HTTP e
 
 ```toml
 [dependencies]
-stratify = { version = "0.4", features = ["azure"] }
+stratify = { version = "1", features = ["azure"] }
 azure_identity = "1"
 ```
 
@@ -110,7 +110,7 @@ loading and refreshing are async.
 
 ```toml
 [dependencies]
-stratify = { version = "0.4", features = ["logging"] }
+stratify = { version = "1", features = ["logging"] }
 ```
 
 ```rust
@@ -187,8 +187,9 @@ tree ever contains `tracing-subscriber`, `tracing-appender` or any
 
 ## Versioning
 
-`0.4` moved the config API from the crate root into `stratify::config`
-(`ConfigBuilder` → `config::Builder`, and so on) and absorbed the logging half.
+`1.0` moved the config API from the crate root into `stratify::config`
+(`ConfigBuilder` → `config::Builder`, and so on), absorbed the logging half,
+and declared the API stable: from here a breaking change is a major version.
 `0.3` made `Source::load` async so that network-backed sources do not have to
 block a runtime thread.
 

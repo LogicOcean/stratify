@@ -36,7 +36,7 @@ flate2 = { version = "1", optional = true }
 # Optional, enabled by the `appinsights` feature. There is no official Azure
 # Monitor SDK for Rust, so export goes through OpenTelemetry.
 opentelemetry = { version = "0.32", optional = true }
-opentelemetry_sdk = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.33", optional = true }
 opentelemetry-application-insights = { version = "0.45", default-features = false, features = ["logs", "trace"], optional = true }
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
